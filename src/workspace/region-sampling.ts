@@ -1,5 +1,5 @@
 import type { RuntimeValue } from "../core/language.js";
-import { interpolatedContourSegments, predicateContourSegments } from "./contour-sampling.js";
+import { interpolatedContourSegments, predicateContourSegments } from "./marching-squares.js";
 import { isVisibleBoundaryPoint, sampledBase, screenToWorld, worldToScreen } from "./sampling-geometry.js";
 import type { GraphViewport, SampledPlot, ScreenCell, ScreenPoint } from "./sampling-types.js";
 import type { Plot } from "./workspace-values.js";

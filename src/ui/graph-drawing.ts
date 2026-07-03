@@ -36,12 +36,13 @@ export function drawGraphFrame(
 
 export function viewportFor(canvas: HTMLCanvasElement, state: Pick<GraphViewState, "view">, interactive: boolean): GraphViewport {
   const rect = canvas.getBoundingClientRect();
+  const overscan = interactive ? 0.35 : 0.2;
   return {
     cx: state.view.cx,
     cy: state.view.cy,
     scale: state.view.scale,
-    width: rect.width,
-    height: rect.height,
+    width: rect.width * (1 + overscan * 2),
+    height: rect.height * (1 + overscan * 2),
     interactive
   };
 }

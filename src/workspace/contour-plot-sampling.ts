@@ -1,4 +1,4 @@
-import { interpolatedContourSegments } from "./contour-sampling.js";
+import { interpolatedContourSegments } from "./marching-squares.js";
 import { sampledBase, screenToWorld } from "./sampling-geometry.js";
 import type { GraphViewport, SampledPlot } from "./sampling-types.js";
 import type { Plot } from "./workspace-values.js";

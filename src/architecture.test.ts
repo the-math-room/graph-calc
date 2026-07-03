@@ -40,6 +40,17 @@ const imperativeShellOnlyPatterns = [
   /\bhistory\b/
 ];
 
+const workspaceSamplingInternals = new Set([
+  "workspace/contour-plot-sampling.ts",
+  "workspace/function-sampling.ts",
+  "workspace/marching-squares.ts",
+  "workspace/parametric-sampling.ts",
+  "workspace/point-sampling.ts",
+  "workspace/region-sampling.ts",
+  "workspace/sampling-geometry.ts",
+  "workspace/sampling-types.ts"
+]);
+
 test("module dependencies follow the documented layer direction", () => {
   const violations: string[] = [];
   for (const file of sourceFiles(srcRoot)) {
@@ -76,6 +87,24 @@ test("ambient effects stay in the UI shell", () => {
   assert.deepEqual(violations, []);
 });
 
+test("workspace sampling internals stay behind the workspace sampling facade outside the workspace layer", () => {
+  const violations: string[] = [];
+  for (const file of sourceFiles(srcRoot)) {
+    const fromLayer = layerFor(file);
+    if (fromLayer === "workspace") continue;
+
+    for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
+      if (!specifier.startsWith(".")) continue;
+      const target = resolveSourceImport(file, specifier);
+      if (target && workspaceSamplingInternals.has(relative(srcRoot, target))) {
+        violations.push(`${relative(srcRoot, file)} imports workspace sampling internal ${specifier}`);
+      }
+    }
+  }
+
+  assert.deepEqual(violations, []);
+});
+
 function sourceFiles(dir: string): string[] {
   const files: string[] = [];
   for (const entry of readdirSync(dir)) {
@@ -100,4 +129,10 @@ function importSpecifiers(source: string): string[] {
   let match: RegExpExecArray | null;
   while ((match = pattern.exec(source))) specifiers.push(match[1]);
   return specifiers;
+}
+
+function resolveSourceImport(fromFile: string, specifier: string): string | null {
+  const target = resolve(fromFile, "..", specifier);
+  if (target.endsWith(".ts")) return target;
+  return `${target}.ts`;
 }

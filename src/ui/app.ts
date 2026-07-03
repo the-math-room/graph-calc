@@ -40,7 +40,13 @@ const importWorkspaceFileEl = requireElement<HTMLInputElement>("#import-workspac
 const graphView = createGraphView(
   canvas,
   readoutEl,
-  (viewport) => scheduleWorkspaceRefresh(viewport.interactive ? 120 : 0)
+  (viewport) => {
+    if (viewport.interactive) {
+      scheduleWorkspaceRefresh(120, "throttle");
+    } else {
+      scheduleWorkspaceRefresh(0);
+    }
+  }
 );
 let currentProgram: CurrentProgram | null = null;
 let refreshTimer: number | null = null;
@@ -355,8 +361,9 @@ function refreshWorkspace(): void {
   graphView.draw(program.plots, program.viewport);
 }
 
-function scheduleWorkspaceRefresh(delay = 80): void {
+function scheduleWorkspaceRefresh(delay = 80, mode: "debounce" | "throttle" = "debounce"): void {
   currentProgram = null;
+  if (mode === "throttle" && refreshTimer !== null) return;
   if (refreshTimer !== null) window.clearTimeout(refreshTimer);
   refreshTimer = window.setTimeout(refreshWorkspace, delay);
 }
