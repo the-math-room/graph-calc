@@ -4,7 +4,7 @@ import type { MathfieldElement } from "mathlive";
 import { clamp } from "./language.js";
 import { createGraphView } from "./graph-view.js";
 import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "./math-syntax.js";
-import { WorkspaceProgram, colors, examples } from "./workspace.js";
+import { WorkspaceProgram, colors, compileWorkspace, examples } from "./workspace.js";
 
 type ExpressionMode = "pretty" | "text";
 type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };
@@ -27,9 +27,7 @@ const sidebarResizerEl = requireElement<HTMLElement>("#sidebar-resizer");
 const keyboardToggleEl = requireElement<HTMLButtonElement>("#toggle-keyboard");
 const graphView = createGraphView(
   canvas,
-  readoutEl,
-  () => state.expressions.map((expression) => expression.source),
-  updateResults
+  readoutEl
 );
 
 requireElement<HTMLButtonElement>("#add-expression").addEventListener("click", () => addExpression(""));
@@ -46,12 +44,12 @@ requireElement<HTMLButtonElement>("#zoom-in").addEventListener("click", () => gr
 requireElement<HTMLButtonElement>("#zoom-out").addEventListener("click", () => graphView.zoomAt(0.8));
 requireElement<HTMLButtonElement>("#reset-view").addEventListener("click", graphView.reset);
 
-window.addEventListener("resize", graphView.draw);
+window.addEventListener("resize", refreshWorkspace);
 sidebarResizerEl.addEventListener("pointerdown", startSidebarResize);
 window.mathVirtualKeyboard.addEventListener("virtual-keyboard-toggle", updateKeyboardToggleState);
 
 renderExpressions();
-graphView.draw();
+refreshWorkspace();
 updateKeyboardToggleState();
 
 function requireElement<T extends Element>(selector: string): T {
@@ -159,7 +157,7 @@ function startSidebarResize(event: PointerEvent): void {
     const width = moveEvent.clientX;
     applySidebarWidth(width);
     localStorage.setItem("lambda-graph-sidebar-width", String(clamp(width, 320, Math.max(320, window.innerWidth - 360))));
-    graphView.draw();
+    refreshWorkspace();
   };
   const onUp = (): void => {
     sidebarResizerEl.removeEventListener("pointermove", onMove);
@@ -180,7 +178,7 @@ function addExpression(source: string): void {
   state.expressions.push({ source, latex: sourceToLatex(source), mode: "pretty" });
   saveExpressions();
   renderExpressions();
-  graphView.draw();
+  refreshWorkspace();
   focusExpression(state.expressions.length - 1);
 }
 
@@ -228,7 +226,7 @@ function renderExpressions(): void {
       state.expressions.splice(index, 1);
       saveExpressions();
       renderExpressions();
-      graphView.draw();
+      refreshWorkspace();
     });
 
     const actions = document.createElement("div");
@@ -293,7 +291,7 @@ function renderNewExpressionRow(): void {
     state.expressions.push({ source, latex, mode: "pretty" });
     saveExpressions();
     renderExpressions();
-    graphView.draw();
+    refreshWorkspace();
     focusExpression(index);
   }, { once: true });
 
@@ -321,13 +319,13 @@ function configureMathfield(input: MathfieldElement): void {
 function updateExpressionLatex(index: number, latex: string): void {
   state.expressions[index] = { ...state.expressions[index], source: latexToSource(latex), latex };
   saveExpressions();
-  graphView.draw();
+  refreshWorkspace();
 }
 
 function updateExpressionSource(index: number, source: string): void {
   state.expressions[index] = { ...state.expressions[index], source, latex: sourceToLatex(source) };
   saveExpressions();
-  graphView.draw();
+  refreshWorkspace();
 }
 
 function escapeInputCommandToText(input: MathfieldElement, index: number): boolean {
@@ -349,4 +347,10 @@ function updateResults(program: WorkspaceProgram): void {
     el.textContent = row.text;
     el.classList.toggle("error", !row.ok);
   });
+}
+
+function refreshWorkspace(): void {
+  const program = compileWorkspace(state.expressions.map((expression) => expression.source));
+  updateResults(program);
+  graphView.draw(program.plots);
 }

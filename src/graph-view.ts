@@ -1,20 +1,18 @@
 import { RuntimeValue, clamp } from "./language.js";
-import { Plot, WorkspaceProgram, compileWorkspace, formatNumber } from "./workspace.js";
+import { Plot, formatNumber } from "./workspace.js";
 
 type Point = { x: number; y: number };
 type View = { cx: number; cy: number; scale: number };
 
 export type GraphView = {
-  draw(): void;
+  draw(plots: Plot[]): void;
   reset(): void;
   zoomAt(factor: number): void;
 };
 
 export function createGraphView(
   canvas: HTMLCanvasElement,
-  readoutEl: HTMLOutputElement,
-  getSources: () => string[],
-  onProgram: (program: WorkspaceProgram) => void
+  readoutEl: HTMLOutputElement
 ): GraphView {
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Canvas 2D context is unavailable");
@@ -23,7 +21,8 @@ export function createGraphView(
     view: { cx: 0, cy: 0, scale: 64 } as View,
     pointer: null as Point | null,
     dragging: false,
-    lastDrag: null as Point | null
+    lastDrag: null as Point | null,
+    plots: [] as Plot[]
   };
 
   const screenToWorld = (x: number, y: number): Point => {
@@ -133,9 +132,7 @@ export function createGraphView(
     ctx.clearRect(0, 0, rect.width, rect.height);
     drawGrid(rect.width, rect.height);
 
-    const program = compileWorkspace(getSources());
-    onProgram(program);
-    program.plots.forEach((plot) => drawPlot(plot, rect.width, rect.height));
+    state.plots.forEach((plot) => drawPlot(plot, rect.width, rect.height));
     if (state.pointer) {
       const world = screenToWorld(state.pointer.x, state.pointer.y);
       readoutEl.value = `(${formatNumber(world.x)}, ${formatNumber(world.y)})`;
@@ -191,7 +188,10 @@ export function createGraphView(
   }, { passive: false });
 
   return {
-    draw,
+    draw(plots: Plot[]) {
+      state.plots = plots;
+      draw();
+    },
     reset() {
       state.view = { cx: 0, cy: 0, scale: 64 };
       draw();
