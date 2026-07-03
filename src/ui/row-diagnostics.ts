@@ -1,9 +1,9 @@
 import type { NormalizedRow, RowResult } from "../workspace/workspace.js";
 import { normalizeRow } from "../workspace/workspace.js";
-import type { SampledPlot } from "../workspace/workspace-sampling.js";
+import type { GraphViewport, SampledPlot } from "../workspace/workspace-sampling.js";
 import type { ExpressionRow } from "./expression-list.js";
 
-export type DiagnosticProgram = { rows: RowResult[]; plots: SampledPlot[] };
+export type DiagnosticProgram = { rows: RowResult[]; plots: SampledPlot[]; viewport: GraphViewport };
 
 export function rowDiagnostics(index: number, expressions: ExpressionRow[], program: DiagnosticProgram): string {
   const expression = expressions[index];
@@ -18,9 +18,18 @@ export function rowDiagnostics(index: number, expressions: ExpressionRow[], prog
     `source: ${formatDiagnosticValue(expression?.source ?? "")}`,
     `normalized: ${formatNormalizedRow(normalized)}`,
     `result: ${row ? `${row.ok ? "ok" : "error"}: ${row.text}` : "missing"}`,
+    `viewport: ${formatViewportDiagnostic(program.viewport)}`,
     `plots: ${plots.length === 0 ? "none" : ""}`,
     ...plots.map((plot) => `- ${formatPlotDiagnostic(plot)}`)
   ].filter((line) => line !== "plots: ").join("\n");
+}
+
+function formatViewportDiagnostic(viewport: GraphViewport): string {
+  return `cx=${formatNumber(viewport.cx)} cy=${formatNumber(viewport.cy)} scale=${formatNumber(viewport.scale)} width=${formatNumber(viewport.width)} height=${formatNumber(viewport.height)} interactive=${viewport.interactive}`;
+}
+
+function formatNumber(value: number): string {
+  return Number(value.toFixed(4)).toString();
 }
 
 export async function copyText(text: string): Promise<void> {
@@ -68,11 +77,11 @@ function formatNormalizedRow(row: NormalizedRow): string {
 
 function formatPlotDiagnostic(plot: SampledPlot): string {
   const base = `${plot.kind} label=${formatDiagnosticValue(plot.label)}`;
-  if (plot.kind === "region-grid") {
+  if (plot.kind === "implicit-region") {
     return `${base} boundaryStyle=${plot.boundaryStyle} cells=${plot.cellCount} fillRuns=${plot.fillRuns.length} fillPolygons=${plot.fillPolygons.length} boundarySegments=${plot.boundarySegments.length}`;
   }
   if (plot.kind === "smooth-region") {
-    return `${base} boundaryStyle=${plot.boundaryStyle} points=${plot.points.length}`;
+    return `${base} boundaryStyle=${plot.boundaryStyle} points=${plot.points.length} fillAll=${plot.fillAll}`;
   }
   if (plot.kind === "points") return `${base} count=${plot.points.length}`;
   if (plot.kind === "polyline") return `${base} segments=${plot.segments.length}`;

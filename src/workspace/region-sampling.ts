@@ -17,10 +17,10 @@ export function sampleRegion(plot: Extract<Plot, { kind: "region" }>, viewport: 
       boundaryStyle: plot.boundaryStyle
     };
   }
-  return sampleRegionGrid(plot, viewport);
+  return sampleImplicitRegion(plot, viewport);
 }
 
-function sampleRegionGrid(plot: Extract<Plot, { kind: "region" }>, viewport: GraphViewport): SampledPlot {
+function sampleImplicitRegion(plot: Extract<Plot, { kind: "region" }>, viewport: GraphViewport): SampledPlot {
   const cellSize = samplingCellSize(viewport, "region");
   const columns = Math.ceil(viewport.width / cellSize);
   const rows = Math.ceil(viewport.height / cellSize);
@@ -71,7 +71,7 @@ function sampleRegionGrid(plot: Extract<Plot, { kind: "region" }>, viewport: Gra
     }
     flushRun(columns);
   }
-  return { ...sampledBase(plot), kind: "region-grid", cellCount, fillRuns, fillPolygons, boundarySegments, boundaryStyle: plot.boundaryStyle };
+  return { ...sampledBase(plot), kind: "implicit-region", cellCount, fillRuns, fillPolygons, boundarySegments, boundaryStyle: plot.boundaryStyle };
 }
 
 function regionCellCorners(corners: boolean[][], values: (number | null)[][], column: number, row: number, cellSize: number): CellCorner[] {

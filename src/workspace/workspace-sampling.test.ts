@@ -15,8 +15,8 @@ test("samples implicit region boundaries as contours instead of cell edges", () 
   });
 
   assert.equal(sampled.length, 1);
-  assert.equal(sampled[0].kind, "region-grid");
-  if (sampled[0].kind !== "region-grid") return;
+  assert.equal(sampled[0].kind, "implicit-region");
+  if (sampled[0].kind !== "implicit-region") return;
   assert.ok(sampled[0].boundarySegments.some((segment) => segment.from.x !== segment.to.x && segment.from.y !== segment.to.y));
   assert.ok(sampled[0].boundarySegments.some((segment) => !Number.isInteger(segment.from.x) || !Number.isInteger(segment.from.y)));
   assert.ok(sampled[0].cellCount > 0);
@@ -78,9 +78,9 @@ test("samples implicit regions more finely when idle than while interacting", ()
   const idle = sampleWorkspacePlots(program.plots, { ...baseViewport, interactive: false });
   const interactive = sampleWorkspacePlots(program.plots, { ...baseViewport, interactive: true });
 
-  assert.equal(idle[0].kind, "region-grid");
-  assert.equal(interactive[0].kind, "region-grid");
-  if (idle[0].kind !== "region-grid" || interactive[0].kind !== "region-grid") return;
+  assert.equal(idle[0].kind, "implicit-region");
+  assert.equal(interactive[0].kind, "implicit-region");
+  if (idle[0].kind !== "implicit-region" || interactive[0].kind !== "implicit-region") return;
   assert.ok(idle[0].boundarySegments.length > interactive[0].boundarySegments.length);
   assert.ok(idle[0].cellCount > interactive[0].cellCount);
 });
@@ -96,8 +96,8 @@ test("caps implicit region sampling budget on large viewports", () => {
     interactive: false
   });
 
-  assert.equal(sampled[0].kind, "region-grid");
-  if (sampled[0].kind !== "region-grid") return;
+  assert.equal(sampled[0].kind, "implicit-region");
+  if (sampled[0].kind !== "implicit-region") return;
   assert.ok(sampled[0].cellCount < 160_000);
   assert.ok(sampled[0].fillRuns.length < sampled[0].cellCount);
 });

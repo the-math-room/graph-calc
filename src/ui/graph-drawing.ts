@@ -2,7 +2,7 @@ import { formatNumber } from "../workspace/workspace.js";
 import { GraphViewport, SampledPlot, ScreenPoint } from "../workspace/workspace-sampling.js";
 import { graphInteraction } from "./graph-interaction-config.js";
 
-type RegionGridPlot = Extract<SampledPlot, { kind: "region-grid" }>;
+type ImplicitRegionPlot = Extract<SampledPlot, { kind: "implicit-region" }>;
 
 export type GraphViewState = {
   view: { cx: number; cy: number; scale: number };
@@ -11,7 +11,7 @@ export type GraphViewState = {
   sampledViewport: GraphViewport | null;
 };
 
-const regionFillCache = new WeakMap<RegionGridPlot, HTMLCanvasElement>();
+const regionFillCache = new WeakMap<ImplicitRegionPlot, HTMLCanvasElement>();
 
 export function drawGraphFrame(
   ctx: CanvasRenderingContext2D,
@@ -104,8 +104,8 @@ function drawPlot(ctx: CanvasRenderingContext2D, plot: SampledPlot, width: numbe
     });
     return;
   }
-  if (plot.kind === "region-grid") {
-    drawRegionGridPlot(ctx, plot, width, height, state);
+  if (plot.kind === "implicit-region") {
+    drawImplicitRegionPlot(ctx, plot, width, height, state);
     return;
   }
   if (plot.kind === "smooth-region") {
@@ -116,7 +116,7 @@ function drawPlot(ctx: CanvasRenderingContext2D, plot: SampledPlot, width: numbe
   strokeSegments(ctx, plot.segments, width, height, state);
 }
 
-function drawRegionGridPlot(ctx: CanvasRenderingContext2D, plot: RegionGridPlot, width: number, height: number, state: GraphViewState): void {
+function drawImplicitRegionPlot(ctx: CanvasRenderingContext2D, plot: ImplicitRegionPlot, width: number, height: number, state: GraphViewState): void {
   const fill = state.sampledViewport ? regionFillImage(plot, state.sampledViewport) : null;
   if (fill && state.sampledViewport) {
     const topLeft = projectPoint(state, width, height, { x: 0, y: 0 });
@@ -131,10 +131,10 @@ function drawRegionGridPlot(ctx: CanvasRenderingContext2D, plot: RegionGridPlot,
     ctx.restore();
   }
 
-  drawRegionGridBoundary(ctx, plot, width, height, state);
+  drawImplicitRegionBoundary(ctx, plot, width, height, state);
 }
 
-function regionFillImage(plot: RegionGridPlot, viewport: GraphViewport): HTMLCanvasElement | null {
+function regionFillImage(plot: ImplicitRegionPlot, viewport: GraphViewport): HTMLCanvasElement | null {
   if (plot.fillRuns.length === 0 && plot.fillPolygons.length === 0) return null;
   const cached = regionFillCache.get(plot);
   if (cached) return cached;
@@ -153,7 +153,7 @@ function regionFillImage(plot: RegionGridPlot, viewport: GraphViewport): HTMLCan
   return canvas;
 }
 
-function drawRegionFillPolygons(ctx: CanvasRenderingContext2D, polygons: Extract<SampledPlot, { kind: "region-grid" }>["fillPolygons"], width: number, height: number, state: GraphViewState): void {
+function drawRegionFillPolygons(ctx: CanvasRenderingContext2D, polygons: Extract<SampledPlot, { kind: "implicit-region" }>["fillPolygons"], width: number, height: number, state: GraphViewState): void {
   ctx.beginPath();
   for (const polygon of polygons) {
     polygon.forEach((point, index) => {
@@ -169,7 +169,7 @@ function drawRegionFillPolygons(ctx: CanvasRenderingContext2D, polygons: Extract
   ctx.fill();
 }
 
-function drawRegionFillRuns(ctx: CanvasRenderingContext2D, runs: RegionGridPlot["fillRuns"], width: number, height: number, state: GraphViewState): void {
+function drawRegionFillRuns(ctx: CanvasRenderingContext2D, runs: ImplicitRegionPlot["fillRuns"], width: number, height: number, state: GraphViewState): void {
   for (const run of runs) {
     const topLeft = projectPoint(state, width, height, { x: run.x, y: run.y });
     const bottomRight = projectPoint(state, width, height, { x: run.x + run.width, y: run.y + run.height });
@@ -177,13 +177,13 @@ function drawRegionFillRuns(ctx: CanvasRenderingContext2D, runs: RegionGridPlot[
   }
 }
 
-function drawRegionFillRunsInSampleSpace(ctx: CanvasRenderingContext2D, runs: RegionGridPlot["fillRuns"]): void {
+function drawRegionFillRunsInSampleSpace(ctx: CanvasRenderingContext2D, runs: ImplicitRegionPlot["fillRuns"]): void {
   for (const run of runs) {
     ctx.fillRect(run.x, run.y, run.width, run.height);
   }
 }
 
-function drawRegionFillPolygonsInSampleSpace(ctx: CanvasRenderingContext2D, polygons: RegionGridPlot["fillPolygons"]): void {
+function drawRegionFillPolygonsInSampleSpace(ctx: CanvasRenderingContext2D, polygons: ImplicitRegionPlot["fillPolygons"]): void {
   ctx.beginPath();
   for (const polygon of polygons) {
     polygon.forEach((point, index) => {
@@ -198,7 +198,7 @@ function drawRegionFillPolygonsInSampleSpace(ctx: CanvasRenderingContext2D, poly
   ctx.fill();
 }
 
-function drawRegionGridBoundary(ctx: CanvasRenderingContext2D, plot: RegionGridPlot, width: number, height: number, state: GraphViewState): void {
+function drawImplicitRegionBoundary(ctx: CanvasRenderingContext2D, plot: ImplicitRegionPlot, width: number, height: number, state: GraphViewState): void {
   if (plot.boundaryStyle === "inclusive") {
     ctx.save();
     ctx.strokeStyle = plot.color;
@@ -369,10 +369,10 @@ function line(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number,
 }
 
 function isRegionPlot(plot: SampledPlot): boolean {
-  return plot.kind === "region-grid" || plot.kind === "smooth-region";
+  return plot.kind === "implicit-region" || plot.kind === "smooth-region";
 }
 
-function regionBoundaryDash(style: Extract<SampledPlot, { kind: "region-grid" | "smooth-region" }>["boundaryStyle"]): number[] {
+function regionBoundaryDash(style: Extract<SampledPlot, { kind: "implicit-region" | "smooth-region" }>["boundaryStyle"]): number[] {
   if (style === "inclusive") return [];
   if (style === "strict") return [2, 4];
   return [3, 2, 1, 2];
