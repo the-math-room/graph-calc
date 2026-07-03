@@ -6,7 +6,7 @@ import { sampleRegion } from "./region-sampling.js";
 import type { GraphViewport, SampledPlot } from "./sampling-types.js";
 import type { Plot } from "./workspace-values.js";
 
-export type { GraphViewport, SampledPlot, SampledPlotBase, ScreenCell, ScreenPoint, ScreenSegment } from "./sampling-types.js";
+export type { GraphViewport, SampledPlot, SampledPlotBase, ScreenPoint, ScreenRect, ScreenSegment } from "./sampling-types.js";
 
 export function sampleWorkspacePlots(plots: Plot[], viewport: GraphViewport): SampledPlot[] {
   return plots.map((plot) => samplePlot(plot, viewport)).filter((plot) => plot !== null);

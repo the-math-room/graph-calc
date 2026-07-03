@@ -69,7 +69,7 @@ function formatNormalizedRow(row: NormalizedRow): string {
 function formatPlotDiagnostic(plot: SampledPlot): string {
   const base = `${plot.kind} label=${formatDiagnosticValue(plot.label)}`;
   if (plot.kind === "region-grid") {
-    return `${base} boundaryStyle=${plot.boundaryStyle} cells=${plot.cells.length}`;
+    return `${base} boundaryStyle=${plot.boundaryStyle} cells=${plot.cellCount} fillRuns=${plot.fillRuns.length} fillPolygons=${plot.fillPolygons.length} boundarySegments=${plot.boundarySegments.length}`;
   }
   if (plot.kind === "smooth-region") {
     return `${base} boundaryStyle=${plot.boundaryStyle} points=${plot.points.length}`;

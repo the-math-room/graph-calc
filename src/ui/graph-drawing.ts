@@ -2,12 +2,16 @@ import { formatNumber } from "../workspace/workspace.js";
 import { GraphViewport, SampledPlot, ScreenPoint } from "../workspace/workspace-sampling.js";
 import { graphInteraction } from "./graph-interaction-config.js";
 
+type RegionGridPlot = Extract<SampledPlot, { kind: "region-grid" }>;
+
 export type GraphViewState = {
   view: { cx: number; cy: number; scale: number };
   pointer: ScreenPoint | null;
   plots: SampledPlot[];
   sampledViewport: GraphViewport | null;
 };
+
+const regionFillCache = new WeakMap<RegionGridPlot, HTMLCanvasElement>();
 
 export function drawGraphFrame(
   ctx: CanvasRenderingContext2D,
@@ -112,39 +116,89 @@ function drawPlot(ctx: CanvasRenderingContext2D, plot: SampledPlot, width: numbe
   strokeSegments(ctx, plot.segments, width, height, state);
 }
 
-function drawRegionGridPlot(ctx: CanvasRenderingContext2D, plot: Extract<SampledPlot, { kind: "region-grid" }>, width: number, height: number, state: GraphViewState): void {
-  ctx.save();
-  ctx.globalAlpha = 0.18;
-  ctx.fillStyle = plot.color;
-  drawRegionCellRuns(ctx, plot.cells, width, height, state);
-  ctx.restore();
+function drawRegionGridPlot(ctx: CanvasRenderingContext2D, plot: RegionGridPlot, width: number, height: number, state: GraphViewState): void {
+  const fill = state.sampledViewport ? regionFillImage(plot, state.sampledViewport) : null;
+  if (fill && state.sampledViewport) {
+    const topLeft = projectPoint(state, width, height, { x: 0, y: 0 });
+    const bottomRight = projectPoint(state, width, height, { x: state.sampledViewport.width, y: state.sampledViewport.height });
+    ctx.drawImage(fill, topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+  } else {
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = plot.color;
+    drawRegionFillRuns(ctx, plot.fillRuns, width, height, state);
+    drawRegionFillPolygons(ctx, plot.fillPolygons, width, height, state);
+    ctx.restore();
+  }
 
   drawRegionGridBoundary(ctx, plot, width, height, state);
 }
 
-function drawRegionCellRuns(ctx: CanvasRenderingContext2D, cells: Extract<SampledPlot, { kind: "region-grid" }>["cells"], width: number, height: number, state: GraphViewState): void {
-  if (cells.length === 0) return;
-  let run = { x: cells[0].x, y: cells[0].y, width: cells[0].size, size: cells[0].size };
+function regionFillImage(plot: RegionGridPlot, viewport: GraphViewport): HTMLCanvasElement | null {
+  if (plot.fillRuns.length === 0 && plot.fillPolygons.length === 0) return null;
+  const cached = regionFillCache.get(plot);
+  if (cached) return cached;
 
-  const flush = (): void => {
-    const topLeft = projectPoint(state, width, height, { x: run.x, y: run.y });
-    const bottomRight = projectPoint(state, width, height, { x: run.x + run.width, y: run.y + run.size });
-    ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x + 0.75, bottomRight.y - topLeft.y + 0.75);
-  };
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.ceil(viewport.width));
+  canvas.height = Math.max(1, Math.ceil(viewport.height));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
 
-  for (const cell of cells.slice(1)) {
-    const continuesRun = cell.y === run.y && cell.size === run.size && Math.abs(cell.x - (run.x + run.width)) < 0.001;
-    if (continuesRun) {
-      run.width += cell.size;
-      continue;
-    }
-    flush();
-    run = { x: cell.x, y: cell.y, width: cell.size, size: cell.size };
-  }
-  flush();
+  ctx.globalAlpha = 0.18;
+  ctx.fillStyle = plot.color;
+  drawRegionFillRunsInSampleSpace(ctx, plot.fillRuns);
+  drawRegionFillPolygonsInSampleSpace(ctx, plot.fillPolygons);
+  regionFillCache.set(plot, canvas);
+  return canvas;
 }
 
-function drawRegionGridBoundary(ctx: CanvasRenderingContext2D, plot: Extract<SampledPlot, { kind: "region-grid" }>, width: number, height: number, state: GraphViewState): void {
+function drawRegionFillPolygons(ctx: CanvasRenderingContext2D, polygons: Extract<SampledPlot, { kind: "region-grid" }>["fillPolygons"], width: number, height: number, state: GraphViewState): void {
+  ctx.beginPath();
+  for (const polygon of polygons) {
+    polygon.forEach((point, index) => {
+      const projected = projectPoint(state, width, height, point);
+      if (index === 0) {
+        ctx.moveTo(projected.x, projected.y);
+      } else {
+        ctx.lineTo(projected.x, projected.y);
+      }
+    });
+    ctx.closePath();
+  }
+  ctx.fill();
+}
+
+function drawRegionFillRuns(ctx: CanvasRenderingContext2D, runs: RegionGridPlot["fillRuns"], width: number, height: number, state: GraphViewState): void {
+  for (const run of runs) {
+    const topLeft = projectPoint(state, width, height, { x: run.x, y: run.y });
+    const bottomRight = projectPoint(state, width, height, { x: run.x + run.width, y: run.y + run.height });
+    ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y);
+  }
+}
+
+function drawRegionFillRunsInSampleSpace(ctx: CanvasRenderingContext2D, runs: RegionGridPlot["fillRuns"]): void {
+  for (const run of runs) {
+    ctx.fillRect(run.x, run.y, run.width, run.height);
+  }
+}
+
+function drawRegionFillPolygonsInSampleSpace(ctx: CanvasRenderingContext2D, polygons: RegionGridPlot["fillPolygons"]): void {
+  ctx.beginPath();
+  for (const polygon of polygons) {
+    polygon.forEach((point, index) => {
+      if (index === 0) {
+        ctx.moveTo(point.x, point.y);
+      } else {
+        ctx.lineTo(point.x, point.y);
+      }
+    });
+    ctx.closePath();
+  }
+  ctx.fill();
+}
+
+function drawRegionGridBoundary(ctx: CanvasRenderingContext2D, plot: RegionGridPlot, width: number, height: number, state: GraphViewState): void {
   if (plot.boundaryStyle === "inclusive") {
     ctx.save();
     ctx.strokeStyle = plot.color;

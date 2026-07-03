@@ -7,6 +7,7 @@
     "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "dev": "vite",
+    "dump-source": "node scripts/dump-source.mjs",
     "preview": "vite preview",
     "test": "rm -rf .test-build && tsc --project tsconfig.test.json && node --test .test-build/*.test.js .test-build/*/*.test.js"
   },

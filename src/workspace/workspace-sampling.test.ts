@@ -19,6 +19,10 @@ test("samples implicit region boundaries as contours instead of cell edges", () 
   if (sampled[0].kind !== "region-grid") return;
   assert.ok(sampled[0].boundarySegments.some((segment) => segment.from.x !== segment.to.x && segment.from.y !== segment.to.y));
   assert.ok(sampled[0].boundarySegments.some((segment) => !Number.isInteger(segment.from.x) || !Number.isInteger(segment.from.y)));
+  assert.ok(sampled[0].cellCount > 0);
+  assert.ok(sampled[0].fillRuns.length > 0);
+  assert.ok(sampled[0].fillPolygons.length < sampled[0].cellCount);
+  assert.ok(sampled[0].fillPolygons.some((polygon) => polygon.length === 3 || polygon.length > 4));
 });
 
 test("samples implicit equality rows as contours", () => {
@@ -61,7 +65,7 @@ test("samples implicit regions more finely when idle than while interacting", ()
   assert.equal(interactive[0].kind, "region-grid");
   if (idle[0].kind !== "region-grid" || interactive[0].kind !== "region-grid") return;
   assert.ok(idle[0].boundarySegments.length > interactive[0].boundarySegments.length);
-  assert.ok(idle[0].cells.length > interactive[0].cells.length);
+  assert.ok(idle[0].cellCount > interactive[0].cellCount);
 });
 
 test("caps implicit region sampling budget on large viewports", () => {
@@ -77,5 +81,6 @@ test("caps implicit region sampling budget on large viewports", () => {
 
   assert.equal(sampled[0].kind, "region-grid");
   if (sampled[0].kind !== "region-grid") return;
-  assert.ok(sampled[0].cells.length < 70_000);
+  assert.ok(sampled[0].cellCount < 160_000);
+  assert.ok(sampled[0].fillRuns.length < sampled[0].cellCount);
 });
