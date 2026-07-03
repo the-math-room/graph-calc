@@ -30,6 +30,7 @@ export function latexToSource(latex: string): string {
   source = source.replace(/\\(?:,|;|:|!| )/g, "");
   source = source.replace(/\\(?:cdot|times)\s*/g, "*");
   source = source.replace(/\\pi\b/g, "pi");
+  source = replaceLatexDerivatives(source);
   source = replaceLatexIntegrals(source);
   source = replaceLatexAggregates(source);
   source = replaceLatexFractions(source);
@@ -84,7 +85,36 @@ function normalizeLatexTextIdentifiers(source: string): string {
 
 function normalizeLatexFunctions(source: string): string {
   for (const name of mathFunctionNames) {
-    source = source.replace(new RegExp(`\\\\${name}\\b\\s*`, "g"), `${name}`);
+    source = normalizeLatexFunction(source, name);
+  }
+  return source;
+}
+
+function normalizeLatexFunction(source: string, name: string): string {
+  let index = source.indexOf(`\\${name}`);
+  while (index !== -1) {
+    const commandEnd = index + name.length + 1;
+    if (/[A-Za-z]/.test(source[commandEnd] ?? "")) {
+      index = source.indexOf(`\\${name}`, commandEnd);
+      continue;
+    }
+
+    const argStart = skipWhitespace(source, commandEnd);
+    if (source[argStart] === "(") {
+      source = source.slice(0, index) + name + source.slice(commandEnd);
+      index = source.indexOf(`\\${name}`, index + name.length);
+      continue;
+    }
+
+    const arg = readLatexArgument(source, commandEnd);
+    if (!arg) {
+      source = source.slice(0, index) + name + source.slice(commandEnd);
+      index = source.indexOf(`\\${name}`, index + name.length);
+      continue;
+    }
+
+    source = source.slice(0, index) + `${name}(${arg.value})` + source.slice(arg.end);
+    index = source.indexOf(`\\${name}`, index + name.length + arg.value.length + 2);
   }
   return source;
 }
@@ -114,6 +144,54 @@ function replaceLatexIntegrals(source: string): string {
     index = source.indexOf("\\int", index + 1);
   }
   return source;
+}
+
+function replaceLatexDerivatives(source: string): string {
+  let index = source.indexOf("\\frac");
+  while (index !== -1) {
+    const derivative = readLatexDerivative(source, index);
+    if (!derivative) {
+      index = source.indexOf("\\frac", index + 1);
+      continue;
+    }
+
+    source =
+      source.slice(0, index) +
+      `derivative(${derivative.dependent}${derivative.point ? `,${derivative.point}` : ""})` +
+      source.slice(derivative.end);
+    index = source.indexOf("\\frac", index + 1);
+  }
+  return source;
+}
+
+function readLatexDerivative(source: string, start: number): { dependent: string; variable: string; point: string | null; end: number } | null {
+  const commandEnd = start + "\\frac".length;
+  const numerator = readLatexArgument(source, commandEnd);
+  if (!numerator) return null;
+  const denominator = readLatexArgument(source, numerator.end);
+  if (!denominator) return null;
+
+  const dependent = readDifferentialOperand(numerator.value);
+  const variable = readDifferentialOperand(denominator.value);
+  if (!dependent || !variable || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(variable)) return null;
+
+  const point = readDerivativePoint(source, denominator.end);
+  return { dependent, variable, point: point?.value ?? null, end: point?.end ?? denominator.end };
+}
+
+function readDifferentialOperand(source: string): string | null {
+  const trimmed = source.trim();
+  const command = readDifferentialCommand(trimmed, 0);
+  const operand = command ? trimmed.slice(command.end).trim() : trimmed.startsWith("d") ? trimmed.slice(1).trim() : "";
+  return operand || null;
+}
+
+function readDerivativePoint(source: string, start: number): { value: string; end: number } | null {
+  const pointStart = skipWhitespace(source, start);
+  if (source[pointStart] !== "(") return null;
+  const pointEnd = findMatchingParen(source, pointStart);
+  if (pointEnd === -1) return null;
+  return { value: source.slice(pointStart + 1, pointEnd), end: pointEnd + 1 };
 }
 
 function readLatexIntegral(
@@ -150,11 +228,28 @@ function findIntegralDifferential(source: string, start: number): { start: numbe
     const ch = source[index];
     if (ch === "{" || ch === "(" || ch === "[") depth++;
     if (ch === "}" || ch === ")" || ch === "]") depth--;
-    if (depth !== 0 || ch !== "d") continue;
+    if (depth !== 0) continue;
 
-    const variableStart = skipWhitespace(source, index + 1);
-    const variable = source.slice(variableStart).match(/^[A-Za-z_][A-Za-z0-9_]*/);
-    if (variable) return { start: index, end: variableStart + variable[0].length, variable: variable[0] };
+    const differential = readDifferential(source, index);
+    if (differential) return differential;
+  }
+  return null;
+}
+
+function readDifferential(source: string, start: number): { start: number; end: number; variable: string } | null {
+  const command = readDifferentialCommand(source, start);
+  const variableStart = skipWhitespace(source, command?.end ?? start + 1);
+  const variable = source.slice(variableStart).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+  if (!variable) return null;
+
+  if (command) return { start, end: variableStart + variable[0].length, variable: variable[0] };
+  if (source[start] === "d") return { start, end: variableStart + variable[0].length, variable: variable[0] };
+  return null;
+}
+
+function readDifferentialCommand(source: string, start: number): { end: number } | null {
+  for (const command of ["\\differentialD", "\\mathrm{d}", "\\operatorname{d}", "\\text{d}"]) {
+    if (source.startsWith(command, start)) return { end: start + command.length };
   }
   return null;
 }

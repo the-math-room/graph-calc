@@ -53,6 +53,7 @@ export function createBaseEnv(): Env {
   env.set("lerp", wrapFunction((a, b, t) => asNumber(a) + (asNumber(b) - asNumber(a)) * asNumber(t), 3));
   env.set("range", wrapFunction((start, end, step) => range(asNumber(start), asNumber(end), asNumber(step)), 3));
   env.set("integral", wrapFunction((fn, lo, hi) => integrate(ensureFunction(fn), asNumber(lo), asNumber(hi)), 3));
+  env.set("derivative", wrapFunction((...args) => derivativeValues(args), 1));
   env.set("error", wrapFunction((message) => {
     throw new Error(asString(message));
   }, 1));
@@ -490,6 +491,21 @@ function integrate(fn: RuntimeFunction, lo: number, hi: number): number {
     sum += (index % 2 === 0 ? 2 : 4) * asNumber(fn(x));
   }
   return (sum * step) / 3;
+}
+
+function derivativeValues(args: RuntimeValue[]): RuntimeValue {
+  if (args.length === 1) {
+    const fn = ensureFunction(args[0]);
+    return wrapFunction((at) => derivativeAt(fn, asNumber(at)), 1);
+  }
+  if (args.length === 2) return derivativeAt(ensureFunction(args[0]), asNumber(args[1]));
+  throw new Error("derivative expects fn or fn, at");
+}
+
+function derivativeAt(fn: RuntimeFunction, at: number): number {
+  if (!Number.isFinite(at)) throw new Error("Derivative point must be finite");
+  const step = Math.max(1e-5, Math.abs(at) * 1e-5);
+  return (asNumber(fn(at + step)) - asNumber(fn(at - step))) / (2 * step);
 }
 
 function sumValues(args: RuntimeValue[]): number {

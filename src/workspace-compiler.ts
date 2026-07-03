@@ -1,5 +1,6 @@
 import { parseExpression } from "./language.js";
 import { CompiledRow, DefinitionRow } from "./workspace-compiled.js";
+import { desugarDerivativeExpressions } from "./workspace-derivatives.js";
 import { RowResult } from "./workspace-values.js";
 import { coreExpressionFor, isDefinitionRow, normalizeRow } from "./workspace-normalize.js";
 
@@ -24,7 +25,7 @@ export function compileWorkspaceRows(expressions: string[]): WorkspaceCompilatio
     }
 
     try {
-      const ast = parseExpression(coreExpressionFor(row));
+      const ast = parseExpression(coreExpressionFor(desugarRowDerivatives(row)));
       const caseArgAsts = row.kind === "case-binding" ? row.args.map((arg) => parseExpression(arg)) : undefined;
       const compiled: CompiledRow = { index, row, ast, caseArgAsts };
       compiledRows.push(compiled);
@@ -35,6 +36,20 @@ export function compileWorkspaceRows(expressions: string[]): WorkspaceCompilatio
   });
 
   return { rows, compiledRows, definitionRows, rowErrors };
+}
+
+function desugarRowDerivatives(row: Exclude<ReturnType<typeof normalizeRow>, { kind: "empty" }>): Exclude<ReturnType<typeof normalizeRow>, { kind: "empty" }> {
+  if (row.kind === "function-binding") {
+    return { ...row, expr: desugarDerivativeExpressions(row.expr, row.params) };
+  }
+  if (row.kind === "case-binding") {
+    return { ...row, expr: desugarDerivativeExpressions(row.expr, row.args.filter(isIdentifier)) };
+  }
+  return row;
+}
+
+function isIdentifier(source: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(source);
 }
 
 export function fillParseErrors(rows: RowResult[], rowErrors: Map<number, string>): void {

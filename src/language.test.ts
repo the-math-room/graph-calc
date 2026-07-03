@@ -37,6 +37,14 @@ test("evaluates numeric integrals with expression bounds", () => {
   assert.ok(Math.abs(Number(evaluateExpression("let area = fn(x1, x2) => integral(fn(x) => x, x1, x2) in area(1, 2)")) - 1.5) < 1e-6);
 });
 
+test("evaluates numeric derivatives", () => {
+  assert.ok(Math.abs(Number(evaluateExpression("derivative(fn(x) => x^2, 3)")) - 6) < 1e-3);
+  assert.ok(Math.abs(Number(evaluateExpression("derivative(sin, 0)")) - 1) < 1e-3);
+  const derivative = evaluateExpression("derivative(fn(x) => x^3)");
+  assert.equal(isRuntimeFunction(derivative), true);
+  if (isRuntimeFunction(derivative)) assert.ok(Math.abs(Number(derivative(2)) - 12) < 1e-3);
+});
+
 test("returns callable runtime functions", () => {
   const value = evaluateExpression("fn(x) => x * x");
   assert.equal(isRuntimeFunction(value), true);

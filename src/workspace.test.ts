@@ -64,6 +64,20 @@ test("compiles latex definite integral notation through the workspace", () => {
   assert.ok(Math.abs(program.plots[0].fn(0) as number - 1.5) < 1e-6);
 });
 
+test("compiles latex derivative notation through the workspace", () => {
+  const program = compileWorkspace(["f(x)=x^2", latexToSource("y_3=\\frac{\\differentialD f}{\\differentialD x}\\left(2\\right)"), "y(3)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true]);
+  assert.equal(program.rows[1].text, "y(3) = 4");
+  assert.equal(program.rows[2].text, "4");
+});
+
+test("desugars derivative expressions inside function definitions", () => {
+  const program = compileWorkspace(["f(x)=derivative(x^2)", "f(1)", "y(2)(x)=derivative(x^2)", "y(2)(1)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true]);
+  assert.equal(program.rows[1].text, "2");
+  assert.equal(program.rows[3].text, "2");
+});
+
 test("compiles latex sum and product notation through the workspace", () => {
   const program = compileWorkspace([latexToSource("y=\\sum_{i=1}^{4}i^2"), latexToSource("\\prod_{i=1}^{4}i"), latexToSource("s(n)=\\sum_{i=0}^{n}i"), "s(5)"]);
   assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true]);
@@ -122,6 +136,13 @@ test("stops runaway recursive case evaluation", () => {
   const program = compileWorkspace(["a(0) = 1", "a(1) = 2", "a(n) = a(n-1) + a(n-2)", "a(30)"]);
   assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, false]);
   assert.equal(program.rows[3].text, "Evaluation limit exceeded");
+});
+
+test("does not exhaust case evaluation budget across independent graph samples", () => {
+  const program = compileWorkspace(["y(2)(x) = x", "y(2)(x)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true]);
+  assert.equal(program.plots[1].kind, "expression");
+  for (let index = 0; index < 20_050; index++) assert.equal(program.plots[1].fn(3), 3);
 });
 
 test("uses scalar arity to read applied scalars as multiplication", () => {

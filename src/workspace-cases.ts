@@ -2,7 +2,7 @@ import { Env, RuntimeFunction, RuntimeValue, evaluate, freeNames, parseExpressio
 import { CaseDefinitionRow, DefinitionRow } from "./workspace-compiled.js";
 import { formatValue } from "./workspace-values.js";
 
-type CaseEvaluationBudget = { remaining: number };
+type CaseEvaluationBudget = { remaining: number; depth: number };
 const maxCaseEvaluations = 20_000;
 
 export function isCaseDefinitionRow(definition: DefinitionRow): definition is CaseDefinitionRow {
@@ -64,7 +64,7 @@ export function caseDefinitionFreeNames(definition: CaseDefinitionRow): Set<stri
 }
 
 export function makeCaseFunction(name: string, definitions: CaseDefinitionRow[], env: Env): RuntimeFunction {
-  return makeCaseFunctionWithState(name, definitions, env, [], { remaining: maxCaseEvaluations });
+  return makeCaseFunctionWithState(name, definitions, env, [], { remaining: maxCaseEvaluations, depth: 0 });
 }
 
 function makeCaseFunctionWithState(
@@ -75,26 +75,34 @@ function makeCaseFunctionWithState(
   budget: CaseEvaluationBudget
 ): RuntimeFunction {
   const fn = ((...args: RuntimeValue[]): RuntimeValue => {
-    spendCaseEvaluation(budget);
-    const values = [...supplied, ...args];
-    for (const definition of definitions) {
-      const local = matchCasePrefix(definition, values, env);
-      if (local && values.length === definition.row.args.length) {
-        return evaluate(definition.ast, local);
+    return withCaseEvaluationBudget(budget, () => {
+      const values = [...supplied, ...args];
+      for (const definition of definitions) {
+        const local = matchCasePrefix(definition, values, env);
+        if (local && values.length === definition.row.args.length) {
+          return evaluate(definition.ast, local);
+        }
       }
-    }
 
-    const hasPrefix = definitions.some((definition) => values.length < definition.row.args.length && matchCasePrefix(definition, values, env));
-    if (hasPrefix) return makeCaseFunctionWithState(name, definitions, env, values, budget);
-    throw new Error(`No matching case: ${name}(${values.map(formatValue).join(", ")})`);
+      const hasPrefix = definitions.some((definition) => values.length < definition.row.args.length && matchCasePrefix(definition, values, env));
+      if (hasPrefix) return makeCaseFunctionWithState(name, definitions, env, values, budget);
+      throw new Error(`No matching case: ${name}(${values.map(formatValue).join(", ")})`);
+    });
   }) as RuntimeFunction;
   fn.arity = 1;
   return fn;
 }
 
-function spendCaseEvaluation(budget: CaseEvaluationBudget): void {
-  budget.remaining--;
-  if (budget.remaining < 0) throw new Error("Evaluation limit exceeded");
+function withCaseEvaluationBudget<T>(budget: CaseEvaluationBudget, evaluateCase: () => T): T {
+  if (budget.depth === 0) budget.remaining = maxCaseEvaluations;
+  budget.depth++;
+  try {
+    budget.remaining--;
+    if (budget.remaining < 0) throw new Error("Evaluation limit exceeded");
+    return evaluateCase();
+  } finally {
+    budget.depth--;
+  }
 }
 
 function matchCasePrefix(definition: CaseDefinitionRow, values: RuntimeValue[], env: Env): Env | null {
