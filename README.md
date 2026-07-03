@@ -9,11 +9,12 @@ Development:
 
 ```bash
 npm install
+npm run dev
 npm run build
 npm test
 ```
 
-The TypeScript source lives in `src/app.ts`; the browser loads `dist/app.js`.
+Vite serves the app locally during development and bundles the production app into `dist/`.
 
 Project structure:
 
