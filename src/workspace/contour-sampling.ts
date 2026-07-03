@@ -1,4 +1,4 @@
-import { ScreenPoint, ScreenSegment } from "./workspace-sampling.js";
+import type { ScreenPoint, ScreenSegment } from "./sampling-types.js";
 
 export function predicateContourSegments(corners: boolean[][], cellSize: number, columns: number, rows: number): ScreenSegment[] {
   const segments: ScreenSegment[] = [];
