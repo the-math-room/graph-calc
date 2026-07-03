@@ -18,7 +18,8 @@ Vite serves the app locally during development and bundles the production app in
 
 Project structure:
 
-- `src/app.ts` owns browser event handling and canvas rendering.
+- `src/app.ts` owns top-level browser wiring and expression-row interactions.
+- `src/graph-view.ts` owns canvas pan/zoom state, grid drawing, and plot rendering.
 - `src/language.ts` owns the parser, evaluator, runtime environment, and functional standard library.
 - `src/math-syntax.ts` adapts between the visual math editor's LaTeX and the graph language syntax.
 - `src/workspace.ts` is the public workspace facade.
