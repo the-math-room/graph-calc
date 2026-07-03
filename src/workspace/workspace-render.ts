@@ -1,4 +1,4 @@
-import { Env, RuntimeValue, evaluate, explicitInequalityBoundary, freeNames, inequalityBoundaryStyle, isInequalityExpression, isRuntimeFunction, makeUserFunction, parseExpression } from "../core/language.js";
+import { Env, RuntimeValue, evaluate, explicitInequalityBoundary, freeNames, inequalityBoundaryStyle, isEqualityExpression, isInequalityExpression, isRuntimeFunction, makeUserFunction, parseExpression } from "../core/language.js";
 import { CompiledRow } from "./workspace-compiled.js";
 import { NormalizedRow, isDefinitionRow } from "./workspace-normalize.js";
 import { Plot, RowResult, SmoothRegionBoundary, colors, formatValue, makePlot, summarizeValue } from "./workspace-values.js";
@@ -36,6 +36,7 @@ export function renderRows(
         continue;
       }
 
+      if (row.kind === "expression" && maybeRenderContour(row, ast, env, rows, plots, index)) continue;
       if (row.kind === "expression" && maybeRenderRegion(row, ast, env, rows, plots, index)) continue;
       if (row.kind === "expression" && maybeRenderBareGraph(row, ast, env, rows, plots, index)) continue;
 
@@ -44,6 +45,34 @@ export function renderRows(
       rows[index] = { ok: false, text: error instanceof Error ? error.message : String(error) };
     }
   }
+}
+
+function maybeRenderContour(
+  row: Extract<NormalizedRow, { kind: "expression" }>,
+  ast: ReturnType<typeof parseExpression>,
+  env: Env,
+  rows: RowResult[],
+  plots: Plot[],
+  index: number
+): boolean {
+  if (!isEqualityExpression(ast)) return false;
+
+  const unbound = unboundNames(ast, env);
+  if (unbound.length === 0) return false;
+  const unknown = unbound.filter((name) => name !== "x" && name !== "y");
+  if (unknown.length > 0) throw new Error(`Unknown names: ${unknown.join(", ")}`);
+
+  const boundaryValue = makeBoundaryValue(ast, env);
+  if (!boundaryValue) return false;
+  plots.push({
+    kind: "contour",
+    rowIndex: index,
+    label: row.source,
+    color: colors[index % colors.length],
+    boundaryValue
+  });
+  rows[index] = { ok: true, text: row.expr };
+  return true;
 }
 
 function maybeRenderRegion(
@@ -68,7 +97,8 @@ function maybeRenderRegion(
     color: colors[index % colors.length],
     predicate: makeRegionPredicate(ast, env),
     boundaryStyle: inequalityBoundaryStyle(ast),
-    smoothBoundary: makeSmoothRegionBoundary(ast, env)
+    smoothBoundary: makeSmoothRegionBoundary(ast, env),
+    boundaryValue: makeBoundaryValue(ast, env)
   });
   rows[index] = { ok: true, text: row.expr };
   return true;
@@ -101,6 +131,24 @@ function maybeRenderBareGraph(
 function makeRegionPredicate(ast: ReturnType<typeof parseExpression>, env: Env): (x: number, y: number) => boolean {
   const predicate = makeUserFunction(["x", "y"], ast, env);
   return (x, y) => predicate(x, y) === true;
+}
+
+function makeBoundaryValue(ast: ReturnType<typeof parseExpression>, env: Env): ((x: number, y: number) => number | null) | undefined {
+  if (ast.type !== "binary") return undefined;
+  if (!["=", "==", "<", ">", "<=", ">="].includes(ast.op)) return undefined;
+  const left = makeUserFunction(["x", "y"], ast.left, env);
+  const right = makeUserFunction(["x", "y"], ast.right, env);
+  return (x, y) => {
+    try {
+      const leftValue = left(x, y);
+      const rightValue = right(x, y);
+      return typeof leftValue === "number" && Number.isFinite(leftValue) && typeof rightValue === "number" && Number.isFinite(rightValue)
+        ? leftValue - rightValue
+        : null;
+    } catch {
+      return null;
+    }
+  };
 }
 
 function makeSmoothRegionBoundary(ast: ReturnType<typeof parseExpression>, env: Env): SmoothRegionBoundary | undefined {

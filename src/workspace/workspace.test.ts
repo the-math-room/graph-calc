@@ -19,6 +19,7 @@ test("normalizes workspace row sugar before compilation", () => {
   assert.deepEqual(normalizeRow("y<=sqrt(x)"), { kind: "expression", source: "y<=sqrt(x)", expr: "y<=sqrt(x)" });
   assert.deepEqual(normalizeRow("x>=1"), { kind: "expression", source: "x>=1", expr: "x>=1" });
   assert.deepEqual(normalizeRow("x==1"), { kind: "expression", source: "x==1", expr: "x==1" });
+  assert.deepEqual(normalizeRow("x^2+y^2=4"), { kind: "expression", source: "x^2+y^2=4", expr: "x^2+y^2=4" });
   assert.deepEqual(normalizeRow("x!=1"), { kind: "expression", source: "x!=1", expr: "x!=1" });
   assert.deepEqual(normalizeRow("f = fn(x) => x <= 1"), { kind: "binding", source: "f = fn(x) => x <= 1", name: "f", expr: "fn(x) => x <= 1" });
   assert.deepEqual(normalizeRow("(cos(t), sin(t)) {0 <= t <= 2pi}"), {
@@ -126,11 +127,12 @@ test("does not guess graph axes for inequalities over unknown names", () => {
   assert.equal(program.plots.length, 0);
 });
 
-test("does not render equality comparisons as shaded regions", () => {
-  const program = compileWorkspace(["x == y"]);
-  assert.deepEqual(program.rows.map((row) => row.ok), [false]);
-  assert.equal(program.rows[0].text, "Unknown names: x, y");
-  assert.equal(program.plots.length, 0);
+test("renders equality comparisons as implicit contours", () => {
+  const program = compileWorkspace(["x == y", "x^2 + y^2 = 4"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["x == y", "x^2 + y^2 = 4"]);
+  assert.equal(program.plots.length, 2);
+  assert.deepEqual(program.plots.map((plot) => plot.kind), ["contour", "contour"]);
 });
 
 test("rejects complex parametric bounds without an explicit real projection", () => {

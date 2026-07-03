@@ -152,6 +152,10 @@ export function isComparisonExpression(ast: Ast): boolean {
   return ast.type === "comparison-chain" || (ast.type === "binary" && comparisonOperators.has(ast.op));
 }
 
+export function isEqualityExpression(ast: Ast): boolean {
+  return ast.type === "binary" && equalityOperators.has(ast.op);
+}
+
 export function isInequalityExpression(ast: Ast): boolean {
   if (ast.type === "binary") return inequalityOperators.has(ast.op);
   return ast.type === "comparison-chain" && ast.rest.some((item) => inequalityOperators.has(item.op));
@@ -477,7 +481,8 @@ class Parser {
   }
 }
 
-const comparisonOperators = new Set(["==", "!=", "<", ">", "<=", ">="]);
+const equalityOperators = new Set(["=", "=="]);
+const comparisonOperators = new Set(["=", "==", "!=", "<", ">", "<=", ">="]);
 const inequalityOperators = new Set(["<", ">", "<=", ">="]);
 
 function inequalityOpsIn(ast: Ast): string[] {
@@ -528,6 +533,7 @@ function applyBinary(op: string, left: RuntimeValue, right: RuntimeValue): Runti
   if (op === ">") return asNumber(left) > asNumber(right);
   if (op === "<=") return asNumber(left) <= asNumber(right);
   if (op === ">=") return asNumber(left) >= asNumber(right);
+  if (op === "=") return left === right;
   if (op === "==") return left === right;
   if (op === "!=") return left !== right;
   throw new Error(`Unknown operator: ${op}`);

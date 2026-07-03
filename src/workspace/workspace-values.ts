@@ -9,7 +9,8 @@ export type SmoothRegionBoundary =
 type PlotBase = { rowIndex: number; label: string; color: string };
 export type Plot =
   | (PlotBase & { kind: "function" | "expression"; fn: (x: number) => RuntimeValue })
-  | (PlotBase & { kind: "region"; predicate: (x: number, y: number) => boolean; boundaryStyle: "inclusive" | "strict" | "mixed"; smoothBoundary?: SmoothRegionBoundary })
+  | (PlotBase & { kind: "region"; predicate: (x: number, y: number) => boolean; boundaryStyle: "inclusive" | "strict" | "mixed"; smoothBoundary?: SmoothRegionBoundary; boundaryValue?: (x: number, y: number) => number | null })
+  | (PlotBase & { kind: "contour"; boundaryValue: (x: number, y: number) => number | null })
   | (PlotBase & { kind: "parametric"; curve: ParametricCurve })
   | (PlotBase & { kind: "points"; points: GraphPoint[] });
 

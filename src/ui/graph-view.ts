@@ -1,19 +1,22 @@
-import { RuntimeValue, clamp } from "../core/language.js";
-import { Plot, formatNumber } from "../workspace/workspace.js";
+import { clamp } from "../core/language.js";
+import { formatNumber } from "../workspace/workspace.js";
+import { GraphViewport, SampledPlot, ScreenPoint } from "../workspace/workspace-sampling.js";
 
-type Point = { x: number; y: number };
+type Point = ScreenPoint;
 type View = { cx: number; cy: number; scale: number };
 
 export type GraphView = {
-  draw(plots: Plot[]): void;
+  draw(plots: SampledPlot[], sampledViewport: GraphViewport): void;
   redraw(): void;
+  viewport(): GraphViewport;
   reset(): void;
   zoomAt(factor: number): void;
 };
 
 export function createGraphView(
   canvas: HTMLCanvasElement,
-  readoutEl: HTMLOutputElement
+  readoutEl: HTMLOutputElement,
+  onViewportChange: (viewport: GraphViewport) => void = () => {}
 ): GraphView {
   const context = canvas.getContext("2d");
   if (!context) throw new Error("Canvas 2D context is unavailable");
@@ -23,7 +26,8 @@ export function createGraphView(
     pointer: null as Point | null,
     dragging: false,
     lastDrag: null as Point | null,
-    plots: [] as Plot[],
+    plots: [] as SampledPlot[],
+    sampledViewport: null as GraphViewport | null,
     drawFrame: 0
   };
 
@@ -41,6 +45,41 @@ export function createGraphView(
       x: rect.width / 2 + (x - state.view.cx) * state.view.scale,
       y: rect.height / 2 - (y - state.view.cy) * state.view.scale
     };
+  };
+
+  const viewport = (): GraphViewport => {
+    const rect = canvas.getBoundingClientRect();
+    return {
+      cx: state.view.cx,
+      cy: state.view.cy,
+      scale: state.view.scale,
+      width: rect.width,
+      height: rect.height,
+      interactive: state.dragging
+    };
+  };
+
+  const viewportScreenToWorld = (source: GraphViewport, point: Point): Point => {
+    return {
+      x: source.cx + (point.x - source.width / 2) / source.scale,
+      y: source.cy - (point.y - source.height / 2) / source.scale
+    };
+  };
+
+  const viewportWorldToScreen = (target: GraphViewport, point: Point): Point => {
+    return {
+      x: target.width / 2 + (point.x - target.cx) * target.scale,
+      y: target.height / 2 - (point.y - target.cy) * target.scale
+    };
+  };
+
+  const projectPoint = (point: Point): Point => {
+    if (!state.sampledViewport) return point;
+    return viewportWorldToScreen(viewport(), viewportScreenToWorld(state.sampledViewport, point));
+  };
+
+  const projectSize = (size: number): number => {
+    return state.sampledViewport ? size * (state.view.scale / state.sampledViewport.scale) : size;
   };
 
   const line = (x1: number, y1: number, x2: number, y2: number): void => {
@@ -82,80 +121,41 @@ export function createGraphView(
     line(0, origin.y, width, origin.y);
   };
 
-  const drawPlot = (plot: Plot, width: number, height: number): void => {
+  const drawPlot = (plot: SampledPlot, width: number, height: number): void => {
     ctx.strokeStyle = plot.color;
     ctx.fillStyle = plot.color;
     ctx.lineWidth = 2.5;
     ctx.lineJoin = "round";
     ctx.lineCap = "round";
     if (plot.kind === "points") {
-      plot.points.forEach(([x, y]) => {
-        const p = worldToScreen(x, y);
+      plot.points.forEach((point) => {
         ctx.beginPath();
-        ctx.arc(p.x, p.y, 3.5, 0, Math.PI * 2);
+        const projected = projectPoint(point);
+        ctx.arc(projected.x, projected.y, 3.5, 0, Math.PI * 2);
         ctx.fill();
       });
       return;
     }
-    if (plot.kind === "region") {
-      drawRegionPlot(plot, width, height);
+    if (plot.kind === "region-grid") {
+      drawRegionGridPlot(plot);
       return;
     }
-    if (plot.kind === "parametric") {
-      drawParametricPlot(plot, width, height);
-      return;
-    }
-
-    ctx.beginPath();
-    let drawing = false;
-    let previousY: number | null = null;
-    const step = state.dragging ? 4 : 2;
-    for (let sx = 0; sx <= width; sx += step) {
-      const x = screenToWorld(sx, 0).x;
-      const y = evaluatePlotY(plot, x);
-      if (y === null) {
-        drawing = false;
-        previousY = null;
-        continue;
-      }
-      const sy = worldToScreen(x, y).y;
-      if (!drawing || previousY === null || Math.abs(sy - previousY) > height * 0.72) {
-        ctx.moveTo(sx, sy);
-        drawing = true;
-      } else {
-        ctx.lineTo(sx, sy);
-      }
-      previousY = sy;
-    }
-    ctx.stroke();
-  };
-
-  const drawRegionPlot = (plot: Extract<Plot, { kind: "region" }>, width: number, height: number): void => {
-    if (plot.smoothBoundary) {
+    if (plot.kind === "smooth-region") {
       drawSmoothRegionPlot(plot, width, height);
       return;
     }
 
-    const cellSize = state.dragging ? 12 : 6;
-    const columns = Math.ceil(width / cellSize);
-    const rows = Math.ceil(height / cellSize);
-    const inside: boolean[][] = [];
+    strokeSegments(plot.segments);
+  };
 
-    for (let row = 0; row < rows; row++) {
-      inside[row] = [];
-      for (let column = 0; column < columns; column++) {
-        const world = screenToWorld(column * cellSize + cellSize / 2, row * cellSize + cellSize / 2);
-        inside[row][column] = evaluateRegion(plot, world.x, world.y);
-      }
-    }
-
+  const drawRegionGridPlot = (plot: Extract<SampledPlot, { kind: "region-grid" }>): void => {
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = plot.color;
-    for (let row = 0; row < rows; row++) {
-      for (let column = 0; column < columns; column++) {
-        if (inside[row][column]) ctx.fillRect(column * cellSize, row * cellSize, cellSize, cellSize);
-      }
+    for (const cell of plot.cells) {
+      const projected = projectPoint(cell);
+      const size = projectSize(cell.size);
+      ctx.fillRect(projected.x, projected.y, size, size);
     }
     ctx.restore();
 
@@ -165,42 +165,24 @@ export function createGraphView(
     ctx.lineCap = "butt";
     ctx.setLineDash(regionBoundaryDash(plot.boundaryStyle));
     ctx.beginPath();
-    for (let row = 0; row < rows; row++) {
-      for (let column = 0; column < columns; column++) {
-        if (!inside[row][column]) continue;
-        const x = column * cellSize;
-        const y = row * cellSize;
-        if (!inside[row - 1]?.[column]) {
-          ctx.moveTo(x, y);
-          ctx.lineTo(x + cellSize, y);
-        }
-        if (!inside[row + 1]?.[column]) {
-          ctx.moveTo(x, y + cellSize);
-          ctx.lineTo(x + cellSize, y + cellSize);
-        }
-        if (!inside[row]?.[column - 1]) {
-          ctx.moveTo(x, y);
-          ctx.lineTo(x, y + cellSize);
-        }
-        if (!inside[row]?.[column + 1]) {
-          ctx.moveTo(x + cellSize, y);
-          ctx.lineTo(x + cellSize, y + cellSize);
-        }
-      }
+    for (const segment of plot.boundarySegments) {
+      const from = projectPoint(segment.from);
+      const to = projectPoint(segment.to);
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
     }
     ctx.stroke();
     ctx.restore();
   };
 
-  const drawSmoothRegionPlot = (plot: Extract<Plot, { kind: "region" }>, width: number, height: number): void => {
-    if (!plot.smoothBoundary) return;
-    const points = sampleSmoothBoundary(plot, width, height);
+  const drawSmoothRegionPlot = (plot: Extract<SampledPlot, { kind: "smooth-region" }>, width: number, height: number): void => {
+    const points = plot.points.map(projectPoint);
     if (points.length < 2) return;
 
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = plot.color;
-    fillSmoothRegion(points, plot.smoothBoundary.fillSide, width, height);
+    fillSmoothRegion(points, plot.fillSide, width, height);
     ctx.restore();
 
     ctx.save();
@@ -209,39 +191,11 @@ export function createGraphView(
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.setLineDash(regionBoundaryDash(plot.boundaryStyle));
-    strokePolyline(points);
+    strokeSegments([plot.points]);
     ctx.restore();
   };
 
-  const sampleSmoothBoundary = (plot: Extract<Plot, { kind: "region" }>, width: number, height: number): Point[] => {
-    const boundary = plot.smoothBoundary;
-    if (!boundary) return [];
-
-    const points: Point[] = [];
-    if (boundary.axis === "y") {
-      const step = state.dragging ? 4 : 2;
-      for (let sx = 0; sx <= width; sx += step) {
-        const x = screenToWorld(sx, 0).x;
-        const y = evaluateBoundary(boundary.fn, x);
-        if (y === null) continue;
-        const screen = worldToScreen(x, y);
-        if (isVisibleBoundaryPoint(screen, width, height)) points.push(screen);
-      }
-      return points;
-    }
-
-    const step = state.dragging ? 4 : 2;
-    for (let sy = 0; sy <= height; sy += step) {
-      const y = screenToWorld(0, sy).y;
-      const x = evaluateBoundary(boundary.fn, y);
-      if (x === null) continue;
-      const screen = worldToScreen(x, y);
-      if (isVisibleBoundaryPoint(screen, width, height)) points.push(screen);
-    }
-    return points;
-  };
-
-  const fillSmoothRegion = (points: Point[], fillSide: NonNullable<Extract<Plot, { kind: "region" }>["smoothBoundary"]>["fillSide"], width: number, height: number): void => {
+  const fillSmoothRegion = (points: Point[], fillSide: Extract<SampledPlot, { kind: "smooth-region" }>["fillSide"], width: number, height: number): void => {
     ctx.beginPath();
     if (fillSide === "below") {
       ctx.moveTo(points[0].x, height);
@@ -264,46 +218,19 @@ export function createGraphView(
     ctx.fill();
   };
 
-  const strokePolyline = (points: Point[]): void => {
+  const strokeSegments = (segments: Point[][]): void => {
     ctx.beginPath();
-    let drawing = false;
-    let previous: Point | null = null;
-    for (const point of points) {
-      if (!drawing || !previous || screenDistance(point, previous) > 96) {
-        ctx.moveTo(point.x, point.y);
-        drawing = true;
-      } else {
-        ctx.lineTo(point.x, point.y);
+    for (const points of segments) {
+      let first = true;
+      for (const point of points) {
+        const projected = projectPoint(point);
+        if (first) {
+          ctx.moveTo(projected.x, projected.y);
+          first = false;
+        } else {
+          ctx.lineTo(projected.x, projected.y);
+        }
       }
-      previous = point;
-    }
-    ctx.stroke();
-  };
-
-  const drawParametricPlot = (plot: Extract<Plot, { kind: "parametric" }>, width: number, height: number): void => {
-    ctx.beginPath();
-    let drawing = false;
-    let previous: Point | null = null;
-    const maxSamples = state.dragging ? 420 : 1600;
-    const samples = Math.max(64, Math.min(maxSamples, Math.floor(width * 1.5)));
-    for (let index = 0; index <= samples; index++) {
-      const ratio = index / samples;
-      const t = plot.curve.lo + (plot.curve.hi - plot.curve.lo) * ratio;
-      const point = evaluateParametricPoint(plot, t);
-      if (!point) {
-        drawing = false;
-        previous = null;
-        continue;
-      }
-
-      const screen = worldToScreen(point.x, point.y);
-      if (!drawing || !previous || screenDistance(screen, previous) > Math.max(width, height) * 0.72) {
-        ctx.moveTo(screen.x, screen.y);
-        drawing = true;
-      } else {
-        ctx.lineTo(screen.x, screen.y);
-      }
-      previous = screen;
     }
     ctx.stroke();
   };
@@ -321,8 +248,8 @@ export function createGraphView(
     ctx.clearRect(0, 0, rect.width, rect.height);
     drawGrid(rect.width, rect.height);
 
-    state.plots.filter((plot) => plot.kind === "region").forEach((plot) => drawPlot(plot, rect.width, rect.height));
-    state.plots.filter((plot) => plot.kind !== "region").forEach((plot) => drawPlot(plot, rect.width, rect.height));
+    state.plots.filter((plot) => plot.kind === "region-grid" || plot.kind === "smooth-region").forEach((plot) => drawPlot(plot, rect.width, rect.height));
+    state.plots.filter((plot) => plot.kind !== "region-grid" && plot.kind !== "smooth-region").forEach((plot) => drawPlot(plot, rect.width, rect.height));
     if (state.pointer) {
       const world = screenToWorld(state.pointer.x, state.pointer.y);
       readoutEl.value = `(${formatNumber(world.x)}, ${formatNumber(world.y)})`;
@@ -346,6 +273,7 @@ export function createGraphView(
       state.view.cy += before.y - after.y;
     }
     requestDraw();
+    onViewportChange(viewport());
   };
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -365,12 +293,14 @@ export function createGraphView(
       state.lastDrag = { x: event.clientX, y: event.clientY };
     }
     requestDraw();
+    onViewportChange(viewport());
   });
 
   canvas.addEventListener("pointerup", () => {
     state.dragging = false;
     state.lastDrag = null;
     requestDraw();
+    onViewportChange(viewport());
   });
 
   canvas.addEventListener("pointerleave", () => {
@@ -387,16 +317,22 @@ export function createGraphView(
   }, { passive: false });
 
   return {
-    draw(plots: Plot[]) {
+    draw(plots: SampledPlot[], sampledViewport: GraphViewport) {
       state.plots = plots;
+      state.sampledViewport = sampledViewport;
       requestDraw();
     },
     redraw() {
       requestDraw();
+      onViewportChange(viewport());
+    },
+    viewport() {
+      return viewport();
     },
     reset() {
       state.view = { cx: 0, cy: 0, scale: 64 };
       requestDraw();
+      onViewportChange(viewport());
     },
     zoomAt(factor: number) {
       zoomAt(factor);
@@ -404,55 +340,10 @@ export function createGraphView(
   };
 }
 
-function evaluatePlotY(plot: Extract<Plot, { kind: "function" | "expression" }>, x: number): number | null {
-  try {
-    const y: RuntimeValue = plot.fn(x);
-    return typeof y === "number" && Number.isFinite(y) ? y : null;
-  } catch {
-    return null;
-  }
-}
-
-function evaluateParametricPoint(plot: Extract<Plot, { kind: "parametric" }>, t: number): Point | null {
-  try {
-    const value = plot.curve.fn(t);
-    if (!Array.isArray(value) || value.length !== 2) return null;
-    const [x, y] = value;
-    return typeof x === "number" && Number.isFinite(x) && typeof y === "number" && Number.isFinite(y) ? { x, y } : null;
-  } catch {
-    return null;
-  }
-}
-
-function evaluateRegion(plot: Extract<Plot, { kind: "region" }>, x: number, y: number): boolean {
-  try {
-    return plot.predicate(x, y);
-  } catch {
-    return false;
-  }
-}
-
-function evaluateBoundary(fn: (value: number) => RuntimeValue, value: number): number | null {
-  try {
-    const result = fn(value);
-    return typeof result === "number" && Number.isFinite(result) ? result : null;
-  } catch {
-    return null;
-  }
-}
-
-function isVisibleBoundaryPoint(point: Point, width: number, height: number): boolean {
-  return point.x >= -width && point.x <= width * 2 && point.y >= -height && point.y <= height * 2;
-}
-
-function regionBoundaryDash(style: Extract<Plot, { kind: "region" }>["boundaryStyle"]): number[] {
+function regionBoundaryDash(style: Extract<SampledPlot, { kind: "region-grid" | "smooth-region" }>["boundaryStyle"]): number[] {
   if (style === "inclusive") return [];
   if (style === "strict") return [2, 4];
   return [3, 2, 1, 2];
-}
-
-function screenDistance(a: Point, b: Point): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function niceStep(target: number): number {

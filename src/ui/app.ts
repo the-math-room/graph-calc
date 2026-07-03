@@ -6,9 +6,8 @@ import { createGraphView } from "./graph-view.js";
 import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "../syntax/math-syntax.js";
 import {
   NormalizedRow,
-  Plot,
+  RowResult,
   WorkspaceFileV1,
-  WorkspaceProgram,
   colors,
   compileWorkspace,
   examples,
@@ -17,9 +16,11 @@ import {
   readWorkspaceFile,
   workspaceFileSchema
 } from "../workspace/workspace.js";
+import { GraphViewport, SampledPlot, sampleWorkspacePlots } from "../workspace/workspace-sampling.js";
 
 type ExpressionMode = "pretty" | "text";
 type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };
+type CurrentProgram = { rows: RowResult[]; plots: SampledPlot[]; viewport: GraphViewport };
 
 type AppState = {
   expressions: ExpressionRow[];
@@ -42,9 +43,10 @@ const keyboardToggleEl = requireElement<HTMLButtonElement>("#toggle-keyboard");
 const importWorkspaceFileEl = requireElement<HTMLInputElement>("#import-workspace-file");
 const graphView = createGraphView(
   canvas,
-  readoutEl
+  readoutEl,
+  (viewport) => scheduleWorkspaceRefresh(viewport.interactive ? 120 : 0)
 );
-let currentProgram: WorkspaceProgram | null = null;
+let currentProgram: CurrentProgram | null = null;
 let refreshTimer: number | null = null;
 
 requireElement<HTMLButtonElement>("#add-expression").addEventListener("click", () => addExpression(""));
@@ -507,7 +509,7 @@ function escapeInputCommandToText(input: MathfieldElement, index: number): boole
   return true;
 }
 
-function updateResults(program: WorkspaceProgram): void {
+function updateResults(program: CurrentProgram): void {
   program.rows.forEach((row, index) => {
     const el = listEl.querySelector(`[data-result-for="${index}"]`);
     if (!el) return;
@@ -521,20 +523,20 @@ function refreshWorkspace(): void {
     window.clearTimeout(refreshTimer);
     refreshTimer = null;
   }
-  const program = compileWorkspace(state.expressions.map((expression) => expression.source));
+  const program = compileAndSampleWorkspace();
   currentProgram = program;
   updateResults(program);
-  graphView.draw(program.plots);
+  graphView.draw(program.plots, program.viewport);
 }
 
-function scheduleWorkspaceRefresh(): void {
+function scheduleWorkspaceRefresh(delay = 80): void {
   currentProgram = null;
   if (refreshTimer !== null) window.clearTimeout(refreshTimer);
-  refreshTimer = window.setTimeout(refreshWorkspace, 80);
+  refreshTimer = window.setTimeout(refreshWorkspace, delay);
 }
 
 async function copyRowDiagnostics(index: number, button: HTMLButtonElement): Promise<void> {
-  const program = currentProgram ?? compileWorkspace(state.expressions.map((expression) => expression.source));
+  const program = currentProgram ?? compileAndSampleWorkspace();
   const text = rowDiagnostics(index, program);
   const originalText = button.textContent ?? "D";
   const originalTitle = button.title;
@@ -554,7 +556,17 @@ async function copyRowDiagnostics(index: number, button: HTMLButtonElement): Pro
   }
 }
 
-function rowDiagnostics(index: number, program: WorkspaceProgram): string {
+function compileAndSampleWorkspace(): CurrentProgram {
+  const program = compileWorkspace(state.expressions.map((expression) => expression.source));
+  const viewport = graphView.viewport();
+  return {
+    rows: program.rows,
+    plots: sampleWorkspacePlots(program.plots, viewport),
+    viewport
+  };
+}
+
+function rowDiagnostics(index: number, program: CurrentProgram): string {
   const expression = state.expressions[index];
   const row = program.rows[index];
   const normalized = expression ? normalizeRow(expression.source) : { kind: "empty" } satisfies NormalizedRow;
@@ -593,14 +605,16 @@ function formatNormalizedRow(row: NormalizedRow): string {
   }
 }
 
-function formatPlotDiagnostic(plot: Plot): string {
+function formatPlotDiagnostic(plot: SampledPlot): string {
   const base = `${plot.kind} label=${formatDiagnosticValue(plot.label)}`;
-  if (plot.kind === "region") {
-    const smooth = plot.smoothBoundary ? ` smoothBoundary=${plot.smoothBoundary.axis} ${plot.smoothBoundary.fillSide}` : " smoothBoundary=none";
-    return `${base} boundaryStyle=${plot.boundaryStyle}${smooth}`;
+  if (plot.kind === "region-grid") {
+    return `${base} boundaryStyle=${plot.boundaryStyle} cells=${plot.cells.length}`;
+  }
+  if (plot.kind === "smooth-region") {
+    return `${base} boundaryStyle=${plot.boundaryStyle} points=${plot.points.length}`;
   }
   if (plot.kind === "points") return `${base} count=${plot.points.length}`;
-  if (plot.kind === "parametric") return `${base} range=[${plot.curve.lo}, ${plot.curve.hi}]`;
+  if (plot.kind === "polyline") return `${base} segments=${plot.segments.length}`;
   return base;
 }
 
