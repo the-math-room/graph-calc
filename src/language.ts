@@ -1,11 +1,12 @@
 export type RuntimeFunction = ((...args: RuntimeValue[]) => RuntimeValue) & { arity: number };
-export type RuntimeValue = number | boolean | RuntimeValue[] | RuntimeFunction;
+export type RuntimeValue = number | string | boolean | RuntimeValue[] | RuntimeFunction;
 
-type TokenType = "number" | "name" | "op" | "arrow" | "(" | ")" | "[" | "]" | "," | "eof";
+type TokenType = "number" | "string" | "name" | "op" | "arrow" | "(" | ")" | "[" | "]" | "," | "eof";
 type Token = { type: TokenType; value: string | number };
 
 type Ast =
   | { type: "number"; value: number }
+  | { type: "string"; value: string }
   | { type: "name"; name: string }
   | { type: "array"; items: Ast[] }
   | { type: "unary"; op: string; expr: Ast }
@@ -51,12 +52,16 @@ export function createBaseEnv(): Env {
   env.set("clamp", wrapFunction((n, lo, hi) => clamp(asNumber(n), asNumber(lo), asNumber(hi)), 3));
   env.set("lerp", wrapFunction((a, b, t) => asNumber(a) + (asNumber(b) - asNumber(a)) * asNumber(t), 3));
   env.set("range", wrapFunction((start, end, step) => range(asNumber(start), asNumber(end), asNumber(step)), 3));
+  env.set("integral", wrapFunction((fn, lo, hi) => integrate(ensureFunction(fn), asNumber(lo), asNumber(hi)), 3));
+  env.set("error", wrapFunction((message) => {
+    throw new Error(asString(message));
+  }, 1));
   env.set("map", wrapFunction((fn, list) => ensureList(list).map((item) => ensureFunction(fn)(item)), 2));
   env.set("filter", wrapFunction((fn, list) => ensureList(list).filter((item) => Boolean(ensureFunction(fn)(item))), 2));
   env.set("fold", wrapFunction((fn, init, list) => ensureList(list).reduce((acc, item) => ensureFunction(fn)(acc, item), init), 3));
   env.set("zipWith", wrapFunction((fn, a, b) => zipWith(ensureFunction(fn), ensureList(a), ensureList(b)), 3));
-  env.set("sum", wrapFunction((list) => ensureList(list).reduce((a, b) => asNumber(a) + asNumber(b), 0), 1));
-  env.set("product", wrapFunction((list) => ensureList(list).reduce((a, b) => asNumber(a) * asNumber(b), 1), 1));
+  env.set("sum", wrapFunction((...args) => sumValues(args), 1));
+  env.set("product", wrapFunction((...args) => productValues(args), 1));
   return env;
 }
 
@@ -71,6 +76,8 @@ export function evaluateExpression(source: string, env = createBaseEnv()): Runti
 export function evaluate(ast: Ast, env: Env): RuntimeValue {
   switch (ast.type) {
     case "number":
+      return ast.value;
+    case "string":
       return ast.value;
     case "name":
       return env.get(ast.name);
@@ -112,6 +119,7 @@ export function usesName(ast: Ast, name: string): boolean {
     case "fn":
       return !ast.params.includes(name) && usesName(ast.body, name);
     case "number":
+    case "string":
       return false;
     case "array":
       return ast.items.some((item) => usesName(item, name));
@@ -131,6 +139,7 @@ export function usesName(ast: Ast, name: string): boolean {
 export function freeNames(ast: Ast, bound = new Set<string>()): Set<string> {
   switch (ast.type) {
     case "number":
+    case "string":
       return new Set();
     case "name":
       return bound.has(ast.name) ? new Set() : new Set([ast.name]);
@@ -209,6 +218,12 @@ function tokenize(source: string): Token[] {
       i += match[0].length;
       continue;
     }
+    if (ch === "\"") {
+      const string = readStringToken(source, i);
+      tokens.push({ type: "string", value: string.value });
+      i = string.end;
+      continue;
+    }
     if (/[A-Za-z_]/.test(ch)) {
       const match = source.slice(i).match(/^[A-Za-z_][A-Za-z0-9_]*/);
       if (!match) throw new Error(`Unexpected token: ${ch}`);
@@ -230,6 +245,26 @@ function tokenize(source: string): Token[] {
   }
   tokens.push({ type: "eof", value: "" });
   return tokens;
+}
+
+function readStringToken(source: string, start: number): { value: string; end: number } {
+  let value = "";
+  let index = start + 1;
+  while (index < source.length) {
+    const ch = source[index];
+    if (ch === "\"") return { value, end: index + 1 };
+    if (ch === "\\") {
+      const next = source[index + 1];
+      if (next === "\"" || next === "\\") {
+        value += next;
+        index += 2;
+        continue;
+      }
+    }
+    value += ch;
+    index++;
+  }
+  throw new Error("Unterminated string");
 }
 
 class Parser {
@@ -312,6 +347,7 @@ class Parser {
   private parsePrimary(): Ast {
     const token = this.peek();
     if (token.type === "number") return { type: "number", value: Number(this.take("number").value) };
+    if (token.type === "string") return { type: "string", value: String(this.take("string").value) };
     if (token.type === "name") return { type: "name", name: String(this.take("name").value) };
     if (token.type === "(") {
       this.take("(");
@@ -430,9 +466,59 @@ function asNumber(value: RuntimeValue): number {
   return value;
 }
 
+function asString(value: RuntimeValue): string {
+  if (typeof value !== "string") throw new Error("Expected a string");
+  return value;
+}
+
 function zipWith(fn: RuntimeFunction, a: RuntimeValue[], b: RuntimeValue[]): RuntimeValue[] {
   const length = Math.min(a.length, b.length);
   const out: RuntimeValue[] = [];
   for (let index = 0; index < length; index++) out.push(fn(a[index], b[index]));
   return out;
+}
+
+function integrate(fn: RuntimeFunction, lo: number, hi: number): number {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) throw new Error("Integral bounds must be finite");
+  if (lo === hi) return 0;
+
+  const intervals = 512;
+  const step = (hi - lo) / intervals;
+  let sum = asNumber(fn(lo)) + asNumber(fn(hi));
+  for (let index = 1; index < intervals; index++) {
+    const x = lo + step * index;
+    sum += (index % 2 === 0 ? 2 : 4) * asNumber(fn(x));
+  }
+  return (sum * step) / 3;
+}
+
+function sumValues(args: RuntimeValue[]): number {
+  if (args.length === 1) return ensureList(args[0]).reduce<number>((a, b) => a + asNumber(b), 0);
+  if (args.length === 3) return aggregateIntegerRange(ensureFunction(args[0]), asNumber(args[1]), asNumber(args[2]), 0, (a, b) => a + b);
+  throw new Error("sum expects a list or fn, lo, hi");
+}
+
+function productValues(args: RuntimeValue[]): number {
+  if (args.length === 1) return ensureList(args[0]).reduce<number>((a, b) => a * asNumber(b), 1);
+  if (args.length === 3) return aggregateIntegerRange(ensureFunction(args[0]), asNumber(args[1]), asNumber(args[2]), 1, (a, b) => a * b);
+  throw new Error("product expects a list or fn, lo, hi");
+}
+
+function aggregateIntegerRange(
+  fn: RuntimeFunction,
+  lo: number,
+  hi: number,
+  initial: number,
+  combine: (acc: number, value: number) => number
+): number {
+  if (!Number.isInteger(lo) || !Number.isInteger(hi)) throw new Error("Range bounds must be integers");
+  const step = lo <= hi ? 1 : -1;
+  const count = Math.abs(hi - lo) + 1;
+  if (count > 10000) throw new Error("Range is too large");
+
+  let acc = initial;
+  for (let n = lo; step > 0 ? n <= hi : n >= hi; n += step) {
+    acc = combine(acc, asNumber(fn(n)));
+  }
+  return acc;
 }

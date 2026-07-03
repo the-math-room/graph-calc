@@ -29,6 +29,8 @@ export function latexToSource(latex: string): string {
   source = source.replace(/\\(?:,|;|:|!| )/g, "");
   source = source.replace(/\\(?:cdot|times)\s*/g, "*");
   source = source.replace(/\\pi\b/g, "pi");
+  source = replaceLatexIntegrals(source);
+  source = replaceLatexAggregates(source);
   source = replaceLatexFractions(source);
   source = replaceLatexSqrt(source);
   source = normalizeLatexFunctions(source);
@@ -68,6 +70,162 @@ function normalizeLatexSuperscripts(source: string): string {
     source = source.replace(/\^\{([^{}]+)\}/g, "^$1");
   } while (source !== previous);
   return source;
+}
+
+function replaceLatexIntegrals(source: string): string {
+  let index = source.indexOf("\\int");
+  while (index !== -1) {
+    const integral = readLatexIntegral(source, index);
+    if (!integral) {
+      index = source.indexOf("\\int", index + 1);
+      continue;
+    }
+
+    source =
+      source.slice(0, index) +
+      `integral(fn(${integral.variable})=>${integral.integrand},${integral.lower},${integral.upper})` +
+      source.slice(integral.end);
+    index = source.indexOf("\\int", index + 1);
+  }
+  return source;
+}
+
+function readLatexIntegral(
+  source: string,
+  start: number
+): { lower: string; upper: string; integrand: string; variable: string; end: number } | null {
+  let cursor = start + "\\int".length;
+  let lower: string | null = null;
+  let upper: string | null = null;
+
+  for (let count = 0; count < 2; count++) {
+    cursor = skipWhitespace(source, cursor);
+    const script = source[cursor];
+    if (script !== "_" && script !== "^") break;
+    const arg = readLatexArgument(source, cursor + 1);
+    if (!arg) return null;
+    if (script === "_") lower = arg.value;
+    if (script === "^") upper = arg.value;
+    cursor = arg.end;
+  }
+  if (lower === null || upper === null) return null;
+
+  const differential = findIntegralDifferential(source, cursor);
+  if (!differential) return null;
+
+  const integrand = trimIntegralMultiplication(source.slice(cursor, differential.start).trim());
+  if (!integrand) return null;
+  return { lower, upper, integrand, variable: differential.variable, end: differential.end };
+}
+
+function findIntegralDifferential(source: string, start: number): { start: number; end: number; variable: string } | null {
+  let depth = 0;
+  for (let index = start; index < source.length - 1; index++) {
+    const ch = source[index];
+    if (ch === "{" || ch === "(" || ch === "[") depth++;
+    if (ch === "}" || ch === ")" || ch === "]") depth--;
+    if (depth !== 0 || ch !== "d") continue;
+
+    const variableStart = skipWhitespace(source, index + 1);
+    const variable = source.slice(variableStart).match(/^[A-Za-z_][A-Za-z0-9_]*/);
+    if (variable) return { start: index, end: variableStart + variable[0].length, variable: variable[0] };
+  }
+  return null;
+}
+
+function trimIntegralMultiplication(source: string): string {
+  return source.replace(/\*$/, "").trim();
+}
+
+function replaceLatexAggregates(source: string): string {
+  source = replaceLatexAggregate(source, "sum", "sum");
+  source = replaceLatexAggregate(source, "prod", "product");
+  return source;
+}
+
+function replaceLatexAggregate(source: string, latexCommand: string, sourceName: string): string {
+  let index = source.indexOf(`\\${latexCommand}`);
+  while (index !== -1) {
+    const aggregate = readLatexAggregate(source, index, latexCommand);
+    if (!aggregate) {
+      const commandEnd = readMalformedAggregateEnd(source, index, latexCommand);
+      source =
+        source.slice(0, index) +
+        `error("${sourceName} notation needs an index binding")` +
+        source.slice(commandEnd);
+      index = source.indexOf(`\\${latexCommand}`, index + 1);
+      continue;
+    }
+
+    source =
+      source.slice(0, index) +
+      `${sourceName}(fn(${aggregate.variable})=>${aggregate.body},${aggregate.lower},${aggregate.upper})` +
+      source.slice(aggregate.end);
+    index = source.indexOf(`\\${latexCommand}`, index + 1);
+  }
+  return source;
+}
+
+function readMalformedAggregateEnd(source: string, start: number, command: string): number {
+  let cursor = start + command.length + 1;
+  for (let count = 0; count < 2; count++) {
+    cursor = skipWhitespace(source, cursor);
+    const script = source[cursor];
+    if (script !== "_" && script !== "^") break;
+    const arg = readLatexArgument(source, cursor + 1);
+    if (!arg) return cursor;
+    cursor = arg.end;
+  }
+  return findAggregateBodyEnd(source, cursor);
+}
+
+function readLatexAggregate(
+  source: string,
+  start: number,
+  command: string
+): { variable: string; lower: string; upper: string; body: string; end: number } | null {
+  let cursor = start + command.length + 1;
+  let lowerClause: string | null = null;
+  let upper: string | null = null;
+
+  for (let count = 0; count < 2; count++) {
+    cursor = skipWhitespace(source, cursor);
+    const script = source[cursor];
+    if (script !== "_" && script !== "^") break;
+    const arg = readLatexArgument(source, cursor + 1);
+    if (!arg) return null;
+    if (script === "_") lowerClause = arg.value;
+    if (script === "^") upper = arg.value;
+    cursor = arg.end;
+  }
+  if (lowerClause === null || upper === null) return null;
+
+  const bodyEnd = findAggregateBodyEnd(source, cursor);
+  const body = source.slice(cursor, bodyEnd).trim();
+  if (!body) return null;
+  const lower = parseAggregateLowerClause(lowerClause);
+  if (!lower) return null;
+  return { variable: lower.variable, lower: lower.value, upper, body, end: bodyEnd };
+}
+
+function parseAggregateLowerClause(source: string): { variable: string; value: string } | null {
+  const equals = source.indexOf("=");
+  if (equals === -1) return null;
+  const variable = source.slice(0, equals).trim();
+  const value = source.slice(equals + 1).trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(variable) || !value) return null;
+  return { variable, value };
+}
+
+function findAggregateBodyEnd(source: string, start: number): number {
+  let depth = 0;
+  for (let index = start; index < source.length; index++) {
+    const ch = source[index];
+    if (ch === "{" || ch === "(" || ch === "[") depth++;
+    if (ch === "}" || ch === ")" || ch === "]") depth--;
+    if (depth === 0 && (ch === "+" || ch === "=")) return index;
+  }
+  return source.length;
 }
 
 function lowerLatexSubscripts(source: string): string {

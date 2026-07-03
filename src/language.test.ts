@@ -30,11 +30,17 @@ test("converts common math editor latex into source syntax", () => {
   assert.equal(latexToSource("x_{1}"), "x(1)");
   assert.equal(latexToSource("x_1_2"), "x(1)(2)");
   assert.equal(latexToSource("x_1_h"), "x(1)(h)");
+  assert.equal(latexToSource("y_{1,2}"), "y(1,2)");
   assert.equal(latexToSource("x_{n-1}"), "x(n-1)");
   assert.equal(latexToSource("y=2x"), "y=2x");
   assert.equal(latexToSource("\\sin(x)+\\pi"), "sin(x)+pi");
   assert.equal(latexToSource("\\frac{x^{2}}{2}"), "((x^2)/(2))");
   assert.equal(latexToSource("v=\\frac43"), "v=((4)/(3))");
+  assert.equal(latexToSource("y=\\int_{1}^{2}x\\cdot dx"), "y=integral(fn(x)=>x,1,2)");
+  assert.equal(latexToSource("\\int_0^1 x^2 dx"), "integral(fn(x)=>x^2,0,1)");
+  assert.equal(latexToSource("\\sum_{i=1}^{4}i^2"), "sum(fn(i)=>i^2,1,4)");
+  assert.equal(latexToSource("\\sum_{0}^{n}n"), "error(\"sum notation needs an index binding\")");
+  assert.equal(latexToSource("\\prod_{i=1}^{4}i"), "product(fn(i)=>i,1,4)");
   assert.equal(latexToSource("\\sqrt{x+1}"), "sqrt(x+1)");
   assert.equal(latexToSource("\\sqrt x"), "sqrt(x)");
   assert.equal(latexToSource("$$ a(n)_{}=a\\left(n-1\\right)+1 $$"), "a(n)=a(n-1)+1");
@@ -69,6 +75,15 @@ test("normalizes workspace row sugar before compilation", () => {
 test("supports first-class functions and higher-order list operations", () => {
   assert.deepEqual(evaluateExpression("map(fn(x) => x^2, range(1, 4, 1))"), [1, 4, 9, 16]);
   assert.equal(evaluateExpression("fold(fn(acc, n) => acc + n, 0, range(1, 4, 1))"), 10);
+  assert.equal(evaluateExpression("sum(fn(i) => i^2, 1, 4)"), 30);
+  assert.equal(evaluateExpression("product(fn(i) => i, 1, 4)"), 24);
+  assert.equal(evaluateExpression("let hi = 4 in sum(fn(i) => i, 1, hi)"), 10);
+});
+
+test("evaluates numeric integrals with expression bounds", () => {
+  assert.ok(Math.abs(Number(evaluateExpression("integral(fn(x) => x^2, 0, 1)")) - 1 / 3) < 1e-6);
+  assert.ok(Math.abs(Number(evaluateExpression("let lo = 1 in let hi = 2 in integral(fn(x) => x, lo, hi)")) - 1.5) < 1e-6);
+  assert.ok(Math.abs(Number(evaluateExpression("let area = fn(x1, x2) => integral(fn(x) => x, x1, x2) in area(1, 2)")) - 1.5) < 1e-6);
 });
 
 test("returns callable runtime functions", () => {
@@ -98,6 +113,42 @@ test("compiles function definition sugar through lexical bindings", () => {
   assert.equal(program.plots[1].fn(4), 24);
   assert.equal(program.plots[2].kind, "function");
   assert.equal(program.plots[2].fn(5), 30);
+});
+
+test("compiles functions whose parameters are integration bounds", () => {
+  const program = compileWorkspace(["area(x1, x2) = integral(fn(x) => x, x1, x2)", "area(1, 2)", latexToSource("area_{1,2}")]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["area: fn/2", "1.5", "1.5"]);
+  assert.equal(program.plots.length, 3);
+});
+
+test("compiles latex definite integral notation through the workspace", () => {
+  const program = compileWorkspace([latexToSource("y=\\int_{1}^{2}x\\cdot dx")]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["y = integral(fn(x)=>x,1,2)"]);
+  assert.equal(program.plots.length, 1);
+  assert.equal(program.plots[0].kind, "expression");
+  assert.ok(Math.abs(program.plots[0].fn(0) as number - 1.5) < 1e-6);
+});
+
+test("compiles latex sum and product notation through the workspace", () => {
+  const program = compileWorkspace([latexToSource("y=\\sum_{i=1}^{4}i^2"), latexToSource("\\prod_{i=1}^{4}i"), latexToSource("s(n)=\\sum_{i=0}^{n}i"), "s(5)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["y = sum(fn(i)=>i^2,1,4)", "24", "s: fn/1", "15"]);
+  assert.equal(program.plots.length, 4);
+  assert.equal(program.plots[0].kind, "expression");
+  assert.equal(program.plots[0].fn(0), 30);
+  assert.equal(program.plots[1].kind, "expression");
+  assert.equal(program.plots[1].fn(0), 24);
+  assert.equal(program.plots[3].kind, "expression");
+  assert.equal(program.plots[3].fn(0), 15);
+});
+
+test("reports aggregate notation without an index binder", () => {
+  const program = compileWorkspace([latexToSource("\\sum_{0}^{n}n"), latexToSource("s(n)=\\sum_{0}^{n}n"), "s(5)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [false, true, false]);
+  assert.equal(program.rows[0].text, "sum notation needs an index binding");
+  assert.equal(program.rows[2].text, "sum notation needs an index binding");
 });
 
 test("compiles subscript-style case definitions as function cases", () => {

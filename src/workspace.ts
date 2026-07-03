@@ -1,5 +1,6 @@
 import { Env, RuntimeValue, createBaseEnv, evaluate, freeNames, makeUserFunction, parseExpression } from "./language.js";
-import { CompiledRow, DefinitionRow, resolveDefinitions } from "./workspace-definitions.js";
+import { CompiledRow, DefinitionRow } from "./workspace-compiled.js";
+import { resolveDefinitions } from "./workspace-definitions.js";
 import { NormalizedRow, coreExpressionFor, isDefinitionRow, normalizeRow } from "./workspace-normalize.js";
 import { Plot, RowResult, WorkspaceProgram, colors, examples, formatNumber, isPoint, makePlot, summarizeValue } from "./workspace-values.js";
 
