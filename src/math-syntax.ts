@@ -25,6 +25,7 @@ export function latexToSource(latex: string): string {
   source = stripDisplayMathDelimiters(source);
   source = stripLatexCommand(source, "left");
   source = stripLatexCommand(source, "right");
+  source = normalizeLatexTextIdentifiers(source);
   source = stripEmptyScripts(source);
   source = source.replace(/\\(?:,|;|:|!| )/g, "");
   source = source.replace(/\\(?:cdot|times)\s*/g, "*");
@@ -41,6 +42,27 @@ export function latexToSource(latex: string): string {
   return source;
 }
 
+export function escapeLatexCommandToText(latex: string, cursor: number): { latex: string; cursor: number } | null {
+  const commands = [...latex.matchAll(/\\[A-Za-z]+/g)];
+  const candidates = commands.filter((command) => {
+    const start = command.index ?? 0;
+    const end = start + command[0].length;
+    return cursor >= start && cursor <= end;
+  });
+  const command = candidates.at(-1);
+  if (!command) return null;
+
+  const start = command.index ?? 0;
+  const end = start + command[0].length;
+  if (latex[end] === "_" || latex[end] === "^") return null;
+
+  const text = command[0].slice(1);
+  return {
+    latex: latex.slice(0, start) + text + latex.slice(end),
+    cursor: Math.min(start + text.length, cursor - 1)
+  };
+}
+
 function stripDisplayMathDelimiters(source: string): string {
   if (source.startsWith("$$") && source.endsWith("$$")) return source.slice(2, -2).trim();
   if (source.startsWith("\\[") && source.endsWith("\\]")) return source.slice(2, -2).trim();
@@ -54,6 +76,10 @@ function stripEmptyScripts(source: string): string {
 
 function stripLatexCommand(source: string, command: string): string {
   return source.replace(new RegExp(`\\\\${command}\\s*`, "g"), "");
+}
+
+function normalizeLatexTextIdentifiers(source: string): string {
+  return source.replace(/\\(?:mathrm|operatorname|text)\{([A-Za-z_][A-Za-z0-9_]*)\}/g, "$1");
 }
 
 function normalizeLatexFunctions(source: string): string {

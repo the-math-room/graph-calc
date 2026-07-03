@@ -1,8 +1,8 @@
-import { Env, RuntimeValue, createBaseEnv, evaluate, freeNames, makeUserFunction, parseExpression } from "./language.js";
+import { Env, RuntimeValue, createBaseEnv, evaluate, freeNames, isRuntimeFunction, makeUserFunction, parseExpression } from "./language.js";
 import { CompiledRow, DefinitionRow } from "./workspace-compiled.js";
 import { resolveDefinitions } from "./workspace-definitions.js";
 import { NormalizedRow, coreExpressionFor, isDefinitionRow, normalizeRow } from "./workspace-normalize.js";
-import { Plot, RowResult, WorkspaceProgram, colors, examples, formatNumber, isPoint, makePlot, summarizeValue } from "./workspace-values.js";
+import { Plot, RowResult, WorkspaceProgram, colors, examples, formatNumber, formatValue, isPoint, makePlot, summarizeValue } from "./workspace-values.js";
 
 export type { Assignment, NormalizedRow } from "./workspace-normalize.js";
 export type { GraphPoint, Plot, RowResult, WorkspaceProgram } from "./workspace-values.js";
@@ -83,7 +83,7 @@ function renderRows(
 
       if (row.kind === "expression" && maybeRenderBareGraph(row, ast, env, rows, plots, index)) continue;
 
-      renderValueRow(row, ast, env, rows, plots, index);
+      renderValueRow(compiled, env, rows, plots);
     } catch (error) {
       rows[index] = { ok: false, text: error instanceof Error ? error.message : String(error) };
     }
@@ -114,19 +114,31 @@ function maybeRenderBareGraph(
 }
 
 function renderValueRow(
-  row: Exclude<NormalizedRow, { kind: "empty" }>,
-  ast: ReturnType<typeof parseExpression>,
+  compiled: CompiledRow,
   env: Env,
   rows: RowResult[],
-  plots: Plot[],
-  index: number
+  plots: Plot[]
 ): void {
+  const { index, row, ast } = compiled;
   const isDefinition = isDefinitionRow(row);
   const label = isDefinition ? row.name : row.source;
   const value = isDefinition ? env.get(row.name) : evaluate(ast, env);
   const plot = makePlot(value, label, colors[index % colors.length], row);
   if (plot) plots.push(plot);
-  rows[index] = { ok: true, text: summarizeValue(value, isDefinition ? row : null) };
+  rows[index] = { ok: true, text: summarizeRowValue(compiled, value, env, isDefinition ? row : null) };
+}
+
+function summarizeRowValue(
+  compiled: CompiledRow,
+  value: RuntimeValue,
+  env: Env,
+  binding: Extract<NormalizedRow, { kind: "binding" | "function-binding" | "case-binding" }> | null
+): string {
+  if (binding?.kind !== "case-binding" || !isRuntimeFunction(value) || !compiled.caseArgAsts) return summarizeValue(value, binding);
+  if (compiled.caseArgAsts.some((arg) => unboundNames(arg, env).length > 0)) return `${binding.name}(${binding.args.join(", ")}) = ${binding.expr}`;
+
+  const args = compiled.caseArgAsts.map((arg) => evaluate(arg, env));
+  return `${binding.name}(${args.map(formatValue).join(", ")}) = ${formatValue(value(...args))}`;
 }
 
 function fillParseErrors(rows: RowResult[], rowErrors: Map<number, string>): void {

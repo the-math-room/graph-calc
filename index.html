@@ -19,6 +19,9 @@
               <span>Aa</span>
               <input id="expression-size" type="range" min="0" max="100" step="1" aria-label="Expression size">
             </label>
+            <button id="toggle-keyboard" class="icon-button" type="button" aria-label="Toggle virtual keyboard" title="Toggle virtual keyboard">
+              ⌨
+            </button>
             <button id="add-expression" class="icon-button" type="button" aria-label="Add expression" title="Add expression">
               +
             </button>
@@ -36,6 +39,7 @@
           </div>
         </footer>
       </aside>
+      <div id="sidebar-resizer" class="sidebar-resizer" role="separator" aria-orientation="vertical" aria-label="Resize expression panel"></div>
 
       <section class="graph-panel">
         <div class="graph-toolbar" aria-label="Graph controls">

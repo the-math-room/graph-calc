@@ -2,12 +2,13 @@ import "mathlive";
 import "mathlive/fonts.css";
 import type { MathfieldElement } from "mathlive";
 import { clamp, RuntimeValue } from "./language.js";
-import { latexToSource, sourceToLatex } from "./math-syntax.js";
+import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "./math-syntax.js";
 import { Plot, WorkspaceProgram, colors, compileWorkspace, examples, formatNumber } from "./workspace.js";
 
 type Point = { x: number; y: number };
 type View = { cx: number; cy: number; scale: number };
-type ExpressionRow = { source: string; latex: string };
+type ExpressionMode = "pretty" | "text";
+type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };
 
 type AppState = {
   expressions: ExpressionRow[];
@@ -34,8 +35,12 @@ const ctx: CanvasRenderingContext2D = context;
 const listEl = requireElement<HTMLElement>("#expression-list");
 const readoutEl = requireElement<HTMLOutputElement>("#cursor-readout");
 const expressionSizeEl = requireElement<HTMLInputElement>("#expression-size");
+const sidebarResizerEl = requireElement<HTMLElement>("#sidebar-resizer");
+const keyboardToggleEl = requireElement<HTMLButtonElement>("#toggle-keyboard");
 
 requireElement<HTMLButtonElement>("#add-expression").addEventListener("click", () => addExpression(""));
+keyboardToggleEl.addEventListener("click", toggleVirtualKeyboard);
+applySidebarWidth(loadSidebarWidth());
 expressionSizeEl.value = String(state.expressionSizeScale);
 applyExpressionSize();
 expressionSizeEl.addEventListener("input", () => {
@@ -88,9 +93,12 @@ canvas.addEventListener("wheel", (event) => {
 }, { passive: false });
 
 window.addEventListener("resize", draw);
+sidebarResizerEl.addEventListener("pointerdown", startSidebarResize);
+window.mathVirtualKeyboard.addEventListener("virtual-keyboard-toggle", updateKeyboardToggleState);
 
 renderExpressions();
 draw();
+updateKeyboardToggleState();
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector(selector);
@@ -112,18 +120,19 @@ function loadExpressions(): ExpressionRow[] {
 }
 
 function readStoredExpression(value: unknown): ExpressionRow | null {
-  if (typeof value === "string") return { source: value, latex: sourceToLatex(value) };
+  if (typeof value === "string") return { source: value, latex: sourceToLatex(value), mode: "pretty" };
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<ExpressionRow>;
   if (typeof row.source !== "string") return null;
   return {
     source: row.source,
-    latex: typeof row.latex === "string" ? row.latex : sourceToLatex(row.source)
+    latex: typeof row.latex === "string" ? row.latex : sourceToLatex(row.source),
+    mode: row.mode === "text" ? "text" : "pretty"
   };
 }
 
 function exampleRows(): ExpressionRow[] {
-  return examples.map((source) => ({ source, latex: sourceToLatex(source) }));
+  return examples.map((source) => ({ source, latex: sourceToLatex(source), mode: "pretty" }));
 }
 
 function loadExpressionSizeScale(): number {
@@ -157,12 +166,64 @@ function saveExpressions(): void {
   localStorage.setItem("lambda-graph-expressions", JSON.stringify(state.expressions));
 }
 
+function toggleVirtualKeyboard(): void {
+  const target = activeMathfield() ?? listEl.querySelector<MathfieldElement>(".new-expression-row math-field") ?? listEl.querySelector<MathfieldElement>("math-field");
+  target?.focus();
+  if (window.mathVirtualKeyboard.visible) {
+    window.mathVirtualKeyboard.hide({ animate: true });
+  } else {
+    window.mathVirtualKeyboard.show({ animate: true });
+  }
+  updateKeyboardToggleState();
+}
+
+function activeMathfield(): MathfieldElement | null {
+  const active = document.activeElement;
+  return active instanceof HTMLElement && active.tagName.toLowerCase() === "math-field" ? active as MathfieldElement : null;
+}
+
+function updateKeyboardToggleState(): void {
+  keyboardToggleEl.classList.toggle("is-active", window.mathVirtualKeyboard.visible);
+  keyboardToggleEl.setAttribute("aria-pressed", String(window.mathVirtualKeyboard.visible));
+}
+
+function loadSidebarWidth(): number {
+  const stored = Number(localStorage.getItem("lambda-graph-sidebar-width") || "");
+  return Number.isFinite(stored) ? stored : 400;
+}
+
+function applySidebarWidth(width: number): void {
+  const clamped = clamp(width, 320, Math.max(320, window.innerWidth - 360));
+  document.documentElement.style.setProperty("--sidebar-width", `${clamped}px`);
+}
+
+function startSidebarResize(event: PointerEvent): void {
+  event.preventDefault();
+  sidebarResizerEl.setPointerCapture(event.pointerId);
+
+  const onMove = (moveEvent: PointerEvent): void => {
+    const width = moveEvent.clientX;
+    applySidebarWidth(width);
+    localStorage.setItem("lambda-graph-sidebar-width", String(clamp(width, 320, Math.max(320, window.innerWidth - 360))));
+    draw();
+  };
+  const onUp = (): void => {
+    sidebarResizerEl.removeEventListener("pointermove", onMove);
+    sidebarResizerEl.removeEventListener("pointerup", onUp);
+    sidebarResizerEl.removeEventListener("pointercancel", onUp);
+  };
+
+  sidebarResizerEl.addEventListener("pointermove", onMove);
+  sidebarResizerEl.addEventListener("pointerup", onUp);
+  sidebarResizerEl.addEventListener("pointercancel", onUp);
+}
+
 function addExpression(source: string): void {
   if (!source) {
     listEl.querySelector<MathfieldElement>(".new-expression-row math-field")?.focus();
     return;
   }
-  state.expressions.push({ source, latex: sourceToLatex(source) });
+  state.expressions.push({ source, latex: sourceToLatex(source), mode: "pretty" });
   saveExpressions();
   renderExpressions();
   draw();
@@ -180,24 +241,28 @@ function renderExpressions(): void {
     swatch.style.background = colors[index % colors.length];
 
     const body = document.createElement("div");
-    const input = document.createElement("math-field") as MathfieldElement;
-    input.className = "expression-input";
-    input.setAttribute("aria-label", "Expression");
-    input.dataset.expressionIndex = String(index);
-    input.value = expression.latex;
-    input.smartSuperscript = true;
-    input.smartFence = true;
-    input.mathVirtualKeyboardPolicy = "manual";
-    input.addEventListener("input", () => {
-      const latex = input.getValue("latex-unstyled");
-      state.expressions[index] = { source: latexToSource(latex), latex };
-      saveExpressions();
-      draw();
-    });
+    body.className = "expression-body";
+    const input = expression.mode === "text" ? renderTextExpressionInput(expression, index) : renderPrettyExpressionInput(expression, index);
 
     const result = document.createElement("div");
     result.className = "result";
     result.dataset.resultFor = String(index);
+
+    const modeToggle = document.createElement("button");
+    modeToggle.className = "row-tool-button";
+    modeToggle.type = "button";
+    modeToggle.textContent = expression.mode === "text" ? "∑" : "T";
+    modeToggle.title = expression.mode === "text" ? "Edit as pretty math" : "Edit as text";
+    modeToggle.setAttribute("aria-label", modeToggle.title);
+    modeToggle.addEventListener("click", () => {
+      state.expressions[index] = {
+        ...state.expressions[index],
+        mode: state.expressions[index].mode === "text" ? "pretty" : "text"
+      };
+      saveExpressions();
+      renderExpressions();
+      focusExpression(index);
+    });
 
     const remove = document.createElement("button");
     remove.className = "remove-button";
@@ -212,11 +277,45 @@ function renderExpressions(): void {
       draw();
     });
 
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    actions.append(remove, modeToggle);
+
     body.append(input, result);
-    card.append(swatch, body, remove);
+    card.append(swatch, body, actions);
     listEl.append(card);
   });
   renderNewExpressionRow();
+}
+
+function renderPrettyExpressionInput(expression: ExpressionRow, index: number): MathfieldElement {
+  const input = document.createElement("math-field") as MathfieldElement;
+  input.className = "expression-input";
+  input.setAttribute("aria-label", "Expression");
+  input.dataset.expressionIndex = String(index);
+  input.value = expression.latex;
+  configureMathfield(input);
+  input.addEventListener("input", () => {
+    updateExpressionLatex(index, input.getValue("latex-unstyled"));
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (escapeInputCommandToText(input, index)) event.preventDefault();
+  });
+  return input;
+}
+
+function renderTextExpressionInput(expression: ExpressionRow, index: number): HTMLTextAreaElement {
+  const input = document.createElement("textarea");
+  input.className = "expression-input text-expression-input";
+  input.setAttribute("aria-label", "Expression text");
+  input.dataset.expressionIndex = String(index);
+  input.rows = 1;
+  input.value = expression.source;
+  input.addEventListener("input", () => {
+    updateExpressionSource(index, input.value);
+  });
+  return input;
 }
 
 function renderNewExpressionRow(): void {
@@ -227,18 +326,17 @@ function renderNewExpressionRow(): void {
   swatch.className = "swatch";
 
   const body = document.createElement("div");
+  body.className = "expression-body";
   const input = document.createElement("math-field") as MathfieldElement;
   input.className = "expression-input";
   input.setAttribute("aria-label", "New expression");
-  input.smartSuperscript = true;
-  input.smartFence = true;
-  input.mathVirtualKeyboardPolicy = "manual";
+  configureMathfield(input);
   input.addEventListener("input", () => {
     const latex = input.getValue("latex-unstyled");
     const source = latexToSource(latex);
     if (!source.trim()) return;
     const index = state.expressions.length;
-    state.expressions.push({ source, latex });
+    state.expressions.push({ source, latex, mode: "pretty" });
     saveExpressions();
     renderExpressions();
     draw();
@@ -249,7 +347,7 @@ function renderNewExpressionRow(): void {
   result.className = "result";
 
   const spacer = document.createElement("div");
-  spacer.className = "remove-spacer";
+  spacer.className = "row-actions-spacer";
 
   body.append(input, result);
   card.append(swatch, body, spacer);
@@ -257,7 +355,37 @@ function renderNewExpressionRow(): void {
 }
 
 function focusExpression(index: number): void {
-  listEl.querySelector<MathfieldElement>(`math-field[data-expression-index="${index}"]`)?.focus();
+  listEl.querySelector<MathfieldElement | HTMLTextAreaElement>(`[data-expression-index="${index}"]`)?.focus();
+}
+
+function configureMathfield(input: MathfieldElement): void {
+  input.smartSuperscript = true;
+  input.smartFence = true;
+  input.mathVirtualKeyboardPolicy = "manual";
+}
+
+function updateExpressionLatex(index: number, latex: string): void {
+  state.expressions[index] = { ...state.expressions[index], source: latexToSource(latex), latex };
+  saveExpressions();
+  draw();
+}
+
+function updateExpressionSource(index: number, source: string): void {
+  state.expressions[index] = { ...state.expressions[index], source, latex: sourceToLatex(source) };
+  saveExpressions();
+  draw();
+}
+
+function escapeInputCommandToText(input: MathfieldElement, index: number): boolean {
+  const latex = input.getValue("latex-unstyled");
+  const cursorLatex = input.getValue(0, input.position, "latex-unstyled").length;
+  const escaped = escapeLatexCommandToText(latex, cursorLatex);
+  if (escaped === null) return false;
+
+  input.setValue(escaped.latex, { format: "latex" });
+  input.position = Math.min(input.lastOffset, Math.max(0, input.position - (cursorLatex - escaped.cursor)));
+  updateExpressionLatex(index, input.getValue("latex-unstyled"));
+  return true;
 }
 
 function zoomAt(factor: number, point: Point | null = null): void {
