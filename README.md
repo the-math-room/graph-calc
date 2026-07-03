@@ -20,8 +20,15 @@ Project structure:
 
 - `src/app.ts` owns browser event handling and canvas rendering.
 - `src/language.ts` owns the parser, evaluator, runtime environment, and functional standard library.
+- `src/math-syntax.ts` adapts between the visual math editor's LaTeX and the graph language syntax.
 - `src/workspace.ts` adapts expression rows into graphable plots and user-facing result text.
 - `src/language.test.ts` covers the functional language and workspace compilation behavior.
+
+Syntax sugar lives at explicit boundaries:
+
+- `src/language.ts` owns expression-level sugar such as implicit multiplication (`2x`, `2(x + 1)`).
+- `src/workspace.ts` owns row-level sugar such as treating `x`, `2x`, and `y = 2x` as graph expressions.
+- `src/math-syntax.ts` owns visual-editor translation between MathLive LaTeX and the language source.
 
 Language examples:
 

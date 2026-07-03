@@ -29,7 +29,8 @@ body {
 
 button,
 textarea,
-input {
+input,
+math-field {
   font: inherit;
 }
 
@@ -117,10 +118,10 @@ input {
 }
 
 .expression-input {
+  display: block;
   width: 100%;
   min-height: 46px;
   max-height: 160px;
-  resize: vertical;
   padding: 9px 10px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -129,6 +130,8 @@ input {
   color: var(--ink);
   line-height: 1.35;
   tab-size: 2;
+  --caret-color: #1b1d22;
+  --selection-background-color: rgba(72, 120, 201, 0.2);
 }
 
 .expression-input:focus {

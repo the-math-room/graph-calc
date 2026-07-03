@@ -1,4 +1,8 @@
+import "mathlive";
+import "mathlive/fonts.css";
+import type { MathfieldElement } from "mathlive";
 import { clamp, RuntimeValue } from "./language.js";
+import { latexToSource, sourceToLatex } from "./math-syntax.js";
 import { Plot, WorkspaceProgram, colors, compileWorkspace, examples, formatNumber } from "./workspace.js";
 
 type Point = { x: number; y: number };
@@ -102,7 +106,7 @@ function addExpression(source: string): void {
   saveExpressions();
   renderExpressions();
   draw();
-  listEl.querySelector<HTMLTextAreaElement>(".expression-card:last-child textarea")?.focus();
+  listEl.querySelector<MathfieldElement>(".expression-card:last-child math-field")?.focus();
 }
 
 function renderExpressions(): void {
@@ -116,13 +120,15 @@ function renderExpressions(): void {
     swatch.style.background = colors[index % colors.length];
 
     const body = document.createElement("div");
-    const input = document.createElement("textarea");
+    const input = document.createElement("math-field") as MathfieldElement;
     input.className = "expression-input";
-    input.spellcheck = false;
-    input.value = source;
-    input.rows = Math.max(2, Math.min(5, source.split("\n").length));
+    input.setAttribute("aria-label", "Expression");
+    input.value = sourceToLatex(source);
+    input.smartSuperscript = true;
+    input.smartFence = true;
+    input.mathVirtualKeyboardPolicy = "manual";
     input.addEventListener("input", () => {
-      state.expressions[index] = input.value;
+      state.expressions[index] = latexToSource(input.getValue("latex-unstyled"));
       saveExpressions();
       draw();
     });

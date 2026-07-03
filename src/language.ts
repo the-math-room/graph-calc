@@ -240,8 +240,9 @@ class Parser {
 
   private parseBinary(minPower: number): Ast {
     let left = this.parseUnary();
-    while (this.peek().type === "op" && precedence(String(this.peek().value)) >= minPower) {
-      const op = String(this.take("op").value);
+    while (this.nextBinaryOp() && precedence(this.nextBinaryOp() as string) >= minPower) {
+      const op = this.nextBinaryOp() as string;
+      if (this.peek().type === "op") this.take("op");
       const power = precedence(op);
       const right = this.parseBinary(power + (op === "^" ? 0 : 1));
       left = { type: "binary", op, left, right };
@@ -259,7 +260,7 @@ class Parser {
 
   private parseCall(): Ast {
     let expr = this.parsePrimary();
-    while (this.peek().type === "(") {
+    while (expr.type === "name" && this.peek().type === "(") {
       this.take("(");
       const args: Ast[] = [];
       if (this.peek().type !== ")") {
@@ -324,6 +325,17 @@ class Parser {
 
   private expectName(name: string): void {
     if (!this.matchName(name)) throw new Error(`Expected ${name}`);
+  }
+
+  private nextBinaryOp(): string | null {
+    if (this.peek().type === "op") return String(this.peek().value);
+    if (this.canStartImplicitFactor(this.peek())) return "*";
+    return null;
+  }
+
+  private canStartImplicitFactor(token: Token): boolean {
+    if (token.type === "number" || token.type === "(" || token.type === "[") return true;
+    return token.type === "name" && !["in", "then", "else"].includes(String(token.value));
   }
 }
 

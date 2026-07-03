@@ -10,6 +10,11 @@ import {
 } from "./language.js";
 
 export type Assignment = { name: string; expr: string };
+export type NormalizedRow =
+  | { kind: "empty" }
+  | { kind: "binding"; source: string; name: string; expr: string }
+  | { kind: "graph"; source: string; expr: string }
+  | { kind: "expression"; source: string; expr: string };
 export type RowResult = { ok: boolean; text: string };
 export type GraphPoint = [number, number];
 export type Plot =
@@ -38,23 +43,34 @@ export function compileWorkspace(expressions: string[]): WorkspaceProgram {
   const plots: Plot[] = [];
 
   expressions.forEach((source, index) => {
-    const text = source.trim();
-    if (!text) {
+    const row = normalizeRow(source);
+    if (row.kind === "empty") {
       rows[index] = { ok: true, text: "" };
       return;
     }
 
     try {
-      const assignment = splitTopLevelAssignment(text);
-      const exprSource = assignment ? assignment.expr : text.replace(/^y\s*=/, "");
-      const ast = parseExpression(exprSource);
-      const value = evaluate(ast, env);
-      if (assignment) env.set(assignment.name, value);
+      const ast = parseExpression(row.expr);
+      const label = row.kind === "binding" ? row.name : row.source;
 
-      const label = assignment ? assignment.name : text;
-      const plot = makePlot(value, ast, env, assignment, label, colors[index % colors.length]);
+      if ((row.kind === "graph" || row.kind === "expression") && usesName(ast, "x")) {
+        const plot: Plot = {
+          kind: "expression",
+          label,
+          color: colors[index % colors.length],
+          fn: makeUserFunction(["x"], ast, env)
+        };
+        plots.push(plot);
+        rows[index] = { ok: true, text: `y = ${row.expr}` };
+        return;
+      }
+
+      const value = evaluate(ast, env);
+      if (row.kind === "binding") env.set(row.name, value);
+
+      const plot = makePlot(value, label, colors[index % colors.length]);
       if (plot) plots.push(plot);
-      rows[index] = { ok: true, text: summarizeValue(value, assignment) };
+      rows[index] = { ok: true, text: summarizeValue(value, row.kind === "binding" ? row : null) };
     } catch (error) {
       rows[index] = { ok: false, text: error instanceof Error ? error.message : String(error) };
     }
@@ -69,24 +85,26 @@ export function formatNumber(value: number): string {
   return Number(value.toFixed(4)).toString();
 }
 
+export function normalizeRow(source: string): NormalizedRow {
+  const text = source.trim();
+  if (!text) return { kind: "empty" };
+
+  const assignment = splitTopLevelAssignment(text);
+  if (!assignment) return { kind: "expression", source: text, expr: text };
+  if (assignment.name === "y") return { kind: "graph", source: text, expr: assignment.expr };
+  return { kind: "binding", source: text, name: assignment.name, expr: assignment.expr };
+}
+
 export function isPoint(value: RuntimeValue): value is GraphPoint {
   return Array.isArray(value) && value.length === 2 && value.every(Number.isFinite);
 }
 
-function makePlot(value: RuntimeValue, ast: ReturnType<typeof parseExpression>, env: Env, assignment: Assignment | null, label: string, color: string): Plot | null {
+function makePlot(value: RuntimeValue, label: string, color: string): Plot | null {
   if (isRuntimeFunction(value) && value.arity >= 1) {
     return { kind: "function", fn: value, label, color };
   }
   if (Array.isArray(value) && value.every(isPoint)) {
     return { kind: "points", points: value, label, color };
-  }
-  if (!assignment && usesName(ast, "x")) {
-    return {
-      kind: "expression",
-      label,
-      color,
-      fn: makeUserFunction(["x"], ast, env)
-    };
   }
   return null;
 }
@@ -99,7 +117,7 @@ function splitTopLevelAssignment(source: string): Assignment | null {
     if (ch === ")" || ch === "]") depth--;
     if (ch === "=" && source[i + 1] !== ">" && source[i - 1] !== "=" && depth === 0) {
       const name = source.slice(0, i).trim();
-      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && name !== "y") {
+      if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
         return { name, expr: source.slice(i + 1).trim() };
       }
     }
@@ -107,8 +125,8 @@ function splitTopLevelAssignment(source: string): Assignment | null {
   return null;
 }
 
-function summarizeValue(value: RuntimeValue, assignment: Assignment | null): string {
-  const prefix = assignment ? `${assignment.name}: ` : "";
+function summarizeValue(value: RuntimeValue, binding: Extract<NormalizedRow, { kind: "binding" }> | null): string {
+  const prefix = binding ? `${binding.name}: ` : "";
   if (isRuntimeFunction(value)) return `${prefix}fn/${value.arity}`;
   if (Array.isArray(value)) return `${prefix}[${value.slice(0, 4).map(formatValue).join(", ")}${value.length > 4 ? ", ..." : ""}]`;
   return `${prefix}${formatValue(value)}`;
