@@ -27,6 +27,9 @@ test("converts common math editor latex into source syntax", () => {
   assert.equal(latexToSource("\\operatorname{produce}(n)=n+1"), "produce(n)=n+1");
   assert.equal(latexToSource("\\sqrt{x+1}"), "sqrt(x+1)");
   assert.equal(latexToSource("\\sqrt x"), "sqrt(x)");
+  assert.equal(latexToSource("y\\le\\sqrt{x}"), "y<=sqrt(x)");
+  assert.equal(latexToSource("y\\le\\sqrt{x\\placeholder{}}"), "y<=sqrt(x)");
+  assert.equal(latexToSource("y\\le\\sqrt{x#?}"), "y<=sqrt(x)");
   assert.equal(latexToSource("\\begin{array}{c}(\\cos(t),\\sin(t))\\\\0\\le t\\le 2\\pi \\end{array}"), "(cos(t), sin(t)) {0 <= t <= 2pi}");
   assert.equal(latexToSource("\\begin{array}{c}(\\cos(t),\\sin(t))\\\\e^{i\\pi}\\le t\\le 0\\end{array}"), "(cos(t), sin(t)) {e^(i*pi) <= t <= 0}");
   assert.equal(latexToSource("$$ a(n)_{}=a\\left(n-1\\right)+1 $$"), "a(n)=a(n-1)+1");

@@ -1,7 +1,7 @@
-import { Env, RuntimeValue, evaluate, freeNames, inequalityBoundaryStyle, isInequalityExpression, isRuntimeFunction, makeUserFunction, parseExpression } from "../core/language.js";
+import { Env, RuntimeValue, evaluate, explicitInequalityBoundary, freeNames, inequalityBoundaryStyle, isInequalityExpression, isRuntimeFunction, makeUserFunction, parseExpression } from "../core/language.js";
 import { CompiledRow } from "./workspace-compiled.js";
 import { NormalizedRow, isDefinitionRow } from "./workspace-normalize.js";
-import { Plot, RowResult, colors, formatValue, makePlot, summarizeValue } from "./workspace-values.js";
+import { Plot, RowResult, SmoothRegionBoundary, colors, formatValue, makePlot, summarizeValue } from "./workspace-values.js";
 
 export function renderRows(
   compiledRows: CompiledRow[],
@@ -26,6 +26,7 @@ export function renderRows(
         explicitGraphAxis = axisResult.explicitGraphAxis;
         plots.push({
           kind: "expression",
+          rowIndex: index,
           label: row.source,
           color: colors[index % colors.length],
           fn: makeGraphFunction(ast, env, axisResult.axis)
@@ -61,10 +62,12 @@ function maybeRenderRegion(
 
   plots.push({
     kind: "region",
+    rowIndex: index,
     label: row.source,
     color: colors[index % colors.length],
     predicate: makeRegionPredicate(ast, env),
-    boundaryStyle: inequalityBoundaryStyle(ast)
+    boundaryStyle: inequalityBoundaryStyle(ast),
+    smoothBoundary: makeSmoothRegionBoundary(ast, env)
   });
   rows[index] = { ok: true, text: row.expr };
   return true;
@@ -82,6 +85,7 @@ function maybeRenderBareGraph(
   if (unbound.length === 1 && unbound[0] === "x") {
     plots.push({
       kind: "expression",
+      rowIndex: index,
       label: row.source,
       color: colors[index % colors.length],
       fn: makeUserFunction(["x"], ast, env)
@@ -98,6 +102,15 @@ function makeRegionPredicate(ast: ReturnType<typeof parseExpression>, env: Env):
   return (x, y) => predicate(x, y) === true;
 }
 
+function makeSmoothRegionBoundary(ast: ReturnType<typeof parseExpression>, env: Env): SmoothRegionBoundary | undefined {
+  const boundary = explicitInequalityBoundary(ast);
+  if (!boundary) return undefined;
+  if (boundary.axis === "y") {
+    return { axis: "y", fn: makeUserFunction(["x"], boundary.expr, env), fillSide: boundary.fillSide };
+  }
+  return { axis: "x", fn: makeUserFunction(["y"], boundary.expr, env), fillSide: boundary.fillSide };
+}
+
 function renderValueRow(
   compiled: CompiledRow,
   env: Env,
@@ -108,7 +121,7 @@ function renderValueRow(
   const isDefinition = isDefinitionRow(row);
   const label = isDefinition ? row.name : row.source;
   const value = isDefinition ? env.get(row.name) : evaluate(ast, env);
-  const plot = makePlot(value, label, colors[index % colors.length], row);
+  const plot = makePlot(value, label, colors[index % colors.length], index, row);
   if (plot) plots.push(plot);
   rows[index] = { ok: true, text: summarizeRowValue(compiled, value, env, isDefinition ? row : null) };
 }

@@ -4,7 +4,7 @@ import type { MathfieldElement } from "mathlive";
 import { clamp } from "../core/language.js";
 import { createGraphView } from "./graph-view.js";
 import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "../syntax/math-syntax.js";
-import { WorkspaceProgram, colors, compileWorkspace, examples, parametricPromptFor } from "../workspace/workspace.js";
+import { NormalizedRow, Plot, WorkspaceProgram, colors, compileWorkspace, examples, normalizeRow, parametricPromptFor } from "../workspace/workspace.js";
 
 type ExpressionMode = "pretty" | "text";
 type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };
@@ -29,6 +29,7 @@ const graphView = createGraphView(
   canvas,
   readoutEl
 );
+let currentProgram: WorkspaceProgram | null = null;
 
 requireElement<HTMLButtonElement>("#add-expression").addEventListener("click", () => addExpression(""));
 requireElement<HTMLButtonElement>("#insert-parametric").addEventListener("click", insertParametricTemplate);
@@ -235,9 +236,19 @@ function renderExpressions(): void {
       refreshWorkspace();
     });
 
+    const diagnostics = document.createElement("button");
+    diagnostics.className = "row-tool-button diagnostic-button";
+    diagnostics.type = "button";
+    diagnostics.textContent = "D";
+    diagnostics.title = "Copy diagnostics";
+    diagnostics.setAttribute("aria-label", "Copy row diagnostics");
+    diagnostics.addEventListener("click", () => {
+      copyRowDiagnostics(index, diagnostics);
+    });
+
     const actions = document.createElement("div");
     actions.className = "row-actions";
-    actions.append(remove, modeToggle);
+    actions.append(remove, modeToggle, diagnostics);
 
     body.append(input, prompt, result);
     card.append(swatch, body, actions);
@@ -421,6 +432,100 @@ function updateResults(program: WorkspaceProgram): void {
 
 function refreshWorkspace(): void {
   const program = compileWorkspace(state.expressions.map((expression) => expression.source));
+  currentProgram = program;
   updateResults(program);
   graphView.draw(program.plots);
+}
+
+async function copyRowDiagnostics(index: number, button: HTMLButtonElement): Promise<void> {
+  const program = currentProgram ?? compileWorkspace(state.expressions.map((expression) => expression.source));
+  const text = rowDiagnostics(index, program);
+  const originalText = button.textContent ?? "D";
+  const originalTitle = button.title;
+
+  try {
+    await copyText(text);
+    button.textContent = "✓";
+    button.title = "Copied diagnostics";
+  } catch (error) {
+    button.textContent = "!";
+    button.title = error instanceof Error ? error.message : "Could not copy diagnostics";
+  } finally {
+    setTimeout(() => {
+      button.textContent = originalText;
+      button.title = originalTitle;
+    }, 1200);
+  }
+}
+
+function rowDiagnostics(index: number, program: WorkspaceProgram): string {
+  const expression = state.expressions[index];
+  const row = program.rows[index];
+  const normalized = expression ? normalizeRow(expression.source) : { kind: "empty" } satisfies NormalizedRow;
+  const plots = program.plots.filter((plot) => plot.rowIndex === index);
+
+  return [
+    `row: ${index + 1}`,
+    `mode: ${expression?.mode ?? "missing"}`,
+    `latex: ${formatDiagnosticValue(expression?.latex ?? "")}`,
+    `source: ${formatDiagnosticValue(expression?.source ?? "")}`,
+    `normalized: ${formatNormalizedRow(normalized)}`,
+    `result: ${row ? `${row.ok ? "ok" : "error"}: ${row.text}` : "missing"}`,
+    `plots: ${plots.length === 0 ? "none" : ""}`,
+    ...plots.map((plot) => `- ${formatPlotDiagnostic(plot)}`)
+  ].filter((line) => line !== "plots: ").join("\n");
+}
+
+function formatDiagnosticValue(value: string): string {
+  return JSON.stringify(value);
+}
+
+function formatNormalizedRow(row: NormalizedRow): string {
+  switch (row.kind) {
+    case "empty":
+      return "empty";
+    case "binding":
+      return `binding name=${row.name} expr=${formatDiagnosticValue(row.expr)}`;
+    case "function-binding":
+      return `function-binding name=${row.name} params=(${row.params.join(", ")}) expr=${formatDiagnosticValue(row.expr)}`;
+    case "case-binding":
+      return `case-binding name=${row.name} args=(${row.args.join(", ")}) expr=${formatDiagnosticValue(row.expr)}`;
+    case "graph":
+      return `graph expr=${formatDiagnosticValue(row.expr)}`;
+    case "expression":
+      return `expression expr=${formatDiagnosticValue(row.expr)}`;
+  }
+}
+
+function formatPlotDiagnostic(plot: Plot): string {
+  const base = `${plot.kind} label=${formatDiagnosticValue(plot.label)}`;
+  if (plot.kind === "region") {
+    const smooth = plot.smoothBoundary ? ` smoothBoundary=${plot.smoothBoundary.axis} ${plot.smoothBoundary.fillSide}` : " smoothBoundary=none";
+    return `${base} boundaryStyle=${plot.boundaryStyle}${smooth}`;
+  }
+  if (plot.kind === "points") return `${base} count=${plot.points.length}`;
+  if (plot.kind === "parametric") return `${base} range=[${plot.curve.lo}, ${plot.curve.hi}]`;
+  return base;
+}
+
+async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall through to the textarea copy path.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.setAttribute("readonly", "true");
+  document.body.append(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Could not copy diagnostics");
 }

@@ -1,4 +1,4 @@
-import { findMatchingParen, isIdentifier, splitTopLevelComma } from "../core/source-structure.js";
+import { findMatchingParen, findTopLevelOperator, isIdentifier, splitTopLevelComma } from "../core/source-structure.js";
 import { findTrailingRestrictionStart, parseCoordinatePair, parseParametricSource } from "../syntax/parametric-syntax.js";
 
 export type Assignment = { name: string; expr: string };
@@ -117,16 +117,17 @@ function orientDefinition(equation: TopLevelEquation): Assignment | null {
 }
 
 function splitTopLevelEquation(source: string): TopLevelEquation | null {
-  let depth = 0;
-  for (let i = 0; i < source.length; i++) {
-    const ch = source[i];
-    if (ch === "(" || ch === "[") depth++;
-    if (ch === ")" || ch === "]") depth--;
-    if (ch === "=" && source[i + 1] !== ">" && source[i - 1] !== "=" && depth === 0) {
-      const left = source.slice(0, i).trim();
-      const right = source.slice(i + 1).trim();
+  let cursor = 0;
+  while (cursor < source.length) {
+    const match = findTopLevelOperator(source, cursor, ["=>", "<=", ">=", "==", "!=", "="]);
+    if (!match) return null;
+    if (match.op === "=") {
+      const left = source.slice(0, match.start).trim();
+      const right = source.slice(match.end).trim();
       if (left && right) return { left, right };
     }
+
+    cursor = match.end;
   }
   return null;
 }

@@ -1,4 +1,4 @@
-import { isIdentifier, splitTopLevelComma } from "../core/source-structure.js";
+import { TopLevelOperatorMatch, findTopLevelOperator, isIdentifier, splitTopLevelComma } from "../core/source-structure.js";
 
 export type CoordinatePair = { x: string; y: string };
 export type ParametricRange = { variable: string; lo: string; hi: string };
@@ -63,19 +63,8 @@ function splitChainedInequality(source: string): { leftExpr: string; leftOp: str
   return { leftExpr, leftOp: first.op, variable, rightOp: second.op, rightExpr };
 }
 
-function findTopLevelComparison(source: string, start: number): { start: number; end: number; op: string } | null {
-  let depth = 0;
-  for (let index = start; index < source.length; index++) {
-    const ch = source[index];
-    if (ch === "(" || ch === "[") depth++;
-    if (ch === ")" || ch === "]") depth--;
-    if (depth !== 0) continue;
-
-    const two = source.slice(index, index + 2);
-    if (two === "<=" || two === ">=") return { start: index, end: index + 2, op: two };
-    if (ch === "<" || ch === ">") return { start: index, end: index + 1, op: ch };
-  }
-  return null;
+function findTopLevelComparison(source: string, start: number): TopLevelOperatorMatch | null {
+  return findTopLevelOperator(source, start, ["<=", ">=", "<", ">"]);
 }
 
 function isLessThanComparison(op: string): boolean {

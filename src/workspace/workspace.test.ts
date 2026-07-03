@@ -16,6 +16,11 @@ test("normalizes workspace row sugar before compilation", () => {
   assert.deepEqual(normalizeRow("y = 2x"), { kind: "graph", source: "y = 2x", expr: "2x" });
   assert.deepEqual(normalizeRow("t = y"), { kind: "graph", source: "t = y", expr: "t" });
   assert.deepEqual(normalizeRow("2s = y"), { kind: "graph", source: "2s = y", expr: "2s" });
+  assert.deepEqual(normalizeRow("y<=sqrt(x)"), { kind: "expression", source: "y<=sqrt(x)", expr: "y<=sqrt(x)" });
+  assert.deepEqual(normalizeRow("x>=1"), { kind: "expression", source: "x>=1", expr: "x>=1" });
+  assert.deepEqual(normalizeRow("x==1"), { kind: "expression", source: "x==1", expr: "x==1" });
+  assert.deepEqual(normalizeRow("x!=1"), { kind: "expression", source: "x!=1", expr: "x!=1" });
+  assert.deepEqual(normalizeRow("f = fn(x) => x <= 1"), { kind: "binding", source: "f = fn(x) => x <= 1", name: "f", expr: "fn(x) => x <= 1" });
   assert.deepEqual(normalizeRow("(cos(t), sin(t)) {0 <= t <= 2pi}"), {
     kind: "expression",
     source: "(cos(t), sin(t)) {0 <= t <= 2pi}",
@@ -54,6 +59,7 @@ test("compiles inequalities as graph-plane regions", () => {
   assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true]);
   assert.deepEqual(program.rows.map((row) => row.text), ["y < x^2", "x^2 + y^2 <= 1", "0 <= x <= 2", "true"]);
   assert.equal(program.plots.length, 3);
+  assert.deepEqual(program.plots.map((plot) => plot.rowIndex), [0, 1, 2]);
 
   assert.equal(program.plots[0].kind, "region");
   if (program.plots[0].kind === "region") {
@@ -82,6 +88,35 @@ test("tracks mixed strict and inclusive inequality boundaries", () => {
   assert.deepEqual(program.rows.map((row) => row.ok), [true]);
   assert.equal(program.plots[0].kind, "region");
   if (program.plots[0].kind === "region") assert.equal(program.plots[0].boundaryStyle, "mixed");
+});
+
+test("adds smooth boundaries for explicit axis inequalities", () => {
+  const program = compileWorkspace(["y < sqrt(x)", "y<=sqrt(x)", latexToSource("y\\le\\sqrt{x\\placeholder{}}"), "x < 1", "x^2 + y^2 <= 1"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true, true]);
+  assert.deepEqual(program.plots.map((plot) => plot.kind), ["region", "region", "region", "region", "region"]);
+
+  const [sqrtRegion, sqrtCompactRegion, sqrtLatexRegion, verticalRegion, circleRegion] = program.plots;
+  if (sqrtRegion.kind === "region") {
+    assert.deepEqual(sqrtRegion.smoothBoundary?.axis, "y");
+    assert.deepEqual(sqrtRegion.smoothBoundary?.fillSide, "below");
+    assert.equal(sqrtRegion.smoothBoundary?.fn(4), 2);
+  }
+  if (sqrtCompactRegion.kind === "region") {
+    assert.deepEqual(sqrtCompactRegion.smoothBoundary?.axis, "y");
+    assert.deepEqual(sqrtCompactRegion.smoothBoundary?.fillSide, "below");
+    assert.equal(sqrtCompactRegion.smoothBoundary?.fn(4), 2);
+  }
+  if (sqrtLatexRegion.kind === "region") {
+    assert.deepEqual(sqrtLatexRegion.smoothBoundary?.axis, "y");
+    assert.deepEqual(sqrtLatexRegion.smoothBoundary?.fillSide, "below");
+    assert.equal(sqrtLatexRegion.smoothBoundary?.fn(4), 2);
+  }
+  if (verticalRegion.kind === "region") {
+    assert.deepEqual(verticalRegion.smoothBoundary?.axis, "x");
+    assert.deepEqual(verticalRegion.smoothBoundary?.fillSide, "left");
+    assert.equal(verticalRegion.smoothBoundary?.fn(10), 1);
+  }
+  if (circleRegion.kind === "region") assert.equal(circleRegion.smoothBoundary, undefined);
 });
 
 test("does not guess graph axes for inequalities over unknown names", () => {

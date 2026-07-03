@@ -42,6 +42,7 @@ export function latexToSource(latex: string): string {
   source = stripLatexCommand(source, "right");
   source = normalizeLatexTextIdentifiers(source);
   source = stripEmptyScripts(source);
+  source = stripLatexPlaceholders(source);
   source = source.replace(/\\(?:,|;|:|!| )/g, "");
   source = source.replace(/\\(?:cdot|times)\s*/g, "*");
   source = source.replace(/\\leq?/g, "<=");
@@ -122,6 +123,16 @@ function stripDisplayMathDelimiters(source: string): string {
 
 function stripEmptyScripts(source: string): string {
   return source.replace(/[_^]\{\s*\}/g, "");
+}
+
+function stripLatexPlaceholders(source: string): string {
+  let index = source.indexOf("\\placeholder");
+  while (index !== -1) {
+    const arg = readLatexArgument(source, index + "\\placeholder".length);
+    source = source.slice(0, index) + (arg?.value ?? "") + source.slice(arg?.end ?? index + "\\placeholder".length);
+    index = source.indexOf("\\placeholder", index);
+  }
+  return source.replace(/#\?/g, "");
 }
 
 function stripLatexCommand(source: string, command: string): string {

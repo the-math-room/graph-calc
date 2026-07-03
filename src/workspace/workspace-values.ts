@@ -3,11 +3,15 @@ import { NormalizedRow } from "./workspace-normalize.js";
 
 export type RowResult = { ok: boolean; text: string };
 export type GraphPoint = [number, number];
+export type SmoothRegionBoundary =
+  | { axis: "y"; fn: (x: number) => RuntimeValue; fillSide: "below" | "above" }
+  | { axis: "x"; fn: (y: number) => RuntimeValue; fillSide: "left" | "right" };
+type PlotBase = { rowIndex: number; label: string; color: string };
 export type Plot =
-  | { kind: "function" | "expression"; fn: (x: number) => RuntimeValue; label: string; color: string }
-  | { kind: "region"; predicate: (x: number, y: number) => boolean; boundaryStyle: "inclusive" | "strict" | "mixed"; label: string; color: string }
-  | { kind: "parametric"; curve: ParametricCurve; label: string; color: string }
-  | { kind: "points"; points: GraphPoint[]; label: string; color: string };
+  | (PlotBase & { kind: "function" | "expression"; fn: (x: number) => RuntimeValue })
+  | (PlotBase & { kind: "region"; predicate: (x: number, y: number) => boolean; boundaryStyle: "inclusive" | "strict" | "mixed"; smoothBoundary?: SmoothRegionBoundary })
+  | (PlotBase & { kind: "parametric"; curve: ParametricCurve })
+  | (PlotBase & { kind: "points"; points: GraphPoint[] });
 
 export type WorkspaceProgram = {
   rows: RowResult[];
@@ -57,18 +61,18 @@ export function isPoint(value: RuntimeValue): value is GraphPoint {
   return Array.isArray(value) && value.length === 2 && value.every(Number.isFinite);
 }
 
-export function makePlot(value: RuntimeValue, label: string, color: string, row: Exclude<NormalizedRow, { kind: "empty" }>): Plot | null {
+export function makePlot(value: RuntimeValue, label: string, color: string, rowIndex: number, row: Exclude<NormalizedRow, { kind: "empty" }>): Plot | null {
   if (isParametricCurve(value)) {
-    return { kind: "parametric", curve: value, label, color };
+    return { kind: "parametric", curve: value, rowIndex, label, color };
   }
   if (isRuntimeFunction(value) && value.arity >= 1) {
-    return { kind: "function", fn: value, label, color };
+    return { kind: "function", fn: value, rowIndex, label, color };
   }
   if (Array.isArray(value) && value.every(isPoint)) {
-    return { kind: "points", points: value, label, color };
+    return { kind: "points", points: value, rowIndex, label, color };
   }
   if ((row.kind === "graph" || row.kind === "expression") && typeof value === "number") {
-    return { kind: "expression", fn: () => value, label, color };
+    return { kind: "expression", fn: () => value, rowIndex, label, color };
   }
   return null;
 }

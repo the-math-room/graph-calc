@@ -2,6 +2,9 @@ export type RuntimeFunction = ((...args: RuntimeValue[]) => RuntimeValue) & { ar
 export type ParametricCurve = { kind: "parametric"; fn: RuntimeFunction; lo: number; hi: number };
 export type ComplexValue = { kind: "complex"; re: number; im: number };
 export type RuntimeValue = number | string | boolean | RuntimeValue[] | RuntimeFunction | ParametricCurve | ComplexValue;
+export type ExplicitInequalityBoundary =
+  | { axis: "y"; expr: Ast; fillSide: "below" | "above" }
+  | { axis: "x"; expr: Ast; fillSide: "left" | "right" };
 
 type TokenType = "number" | "string" | "name" | "op" | "arrow" | "(" | ")" | "[" | "]" | "," | "eof";
 type Token = { type: TokenType; value: string | number };
@@ -162,6 +165,24 @@ export function inequalityBoundaryStyle(ast: Ast): InequalityBoundaryStyle {
   const hasInclusive = ops.some((op) => op === "<=" || op === ">=");
   if (hasStrict && hasInclusive) return "mixed";
   return hasStrict ? "strict" : "inclusive";
+}
+
+export function explicitInequalityBoundary(ast: Ast): ExplicitInequalityBoundary | null {
+  if (ast.type !== "binary" || !inequalityOperators.has(ast.op)) return null;
+
+  const leftAxis = axisName(ast.left);
+  if (leftAxis && !usesName(ast.right, leftAxis)) {
+    if (leftAxis === "y") return { axis: "y", expr: ast.right, fillSide: fillSideFor("y", ast.op, "left") };
+    return { axis: "x", expr: ast.right, fillSide: fillSideFor("x", ast.op, "left") };
+  }
+
+  const rightAxis = axisName(ast.right);
+  if (rightAxis && !usesName(ast.left, rightAxis)) {
+    if (rightAxis === "y") return { axis: "y", expr: ast.left, fillSide: fillSideFor("y", ast.op, "right") };
+    return { axis: "x", expr: ast.left, fillSide: fillSideFor("x", ast.op, "right") };
+  }
+
+  return null;
 }
 
 export function freeNames(ast: Ast, bound = new Set<string>()): Set<string> {
@@ -463,6 +484,18 @@ function inequalityOpsIn(ast: Ast): string[] {
   if (ast.type === "binary" && inequalityOperators.has(ast.op)) return [ast.op];
   if (ast.type === "comparison-chain") return ast.rest.map((item) => item.op).filter((op) => inequalityOperators.has(op));
   return [];
+}
+
+function axisName(ast: Ast): "x" | "y" | null {
+  return ast.type === "name" && (ast.name === "x" || ast.name === "y") ? ast.name : null;
+}
+
+function fillSideFor(axis: "y", op: string, axisSide: "left" | "right"): "below" | "above";
+function fillSideFor(axis: "x", op: string, axisSide: "left" | "right"): "left" | "right";
+function fillSideFor(axis: "x" | "y", op: string, axisSide: "left" | "right"): ExplicitInequalityBoundary["fillSide"] {
+  const axisIsLess = (axisSide === "left" && (op === "<" || op === "<=")) || (axisSide === "right" && (op === ">" || op === ">="));
+  if (axis === "y") return axisIsLess ? "below" : "above";
+  return axisIsLess ? "left" : "right";
 }
 
 function precedence(op: string): number {

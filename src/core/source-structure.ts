@@ -2,6 +2,23 @@ export function splitTopLevelComma(source: string): string[] {
   return splitTopLevel(source, ",").map((part) => part.trim());
 }
 
+export type TopLevelOperatorMatch = { start: number; end: number; op: string };
+
+export function findTopLevelOperator(source: string, start: number, operators: string[]): TopLevelOperatorMatch | null {
+  const orderedOperators = [...operators].sort((a, b) => b.length - a.length);
+  let depth = 0;
+  for (let index = start; index < source.length; index++) {
+    const ch = source[index];
+    if (isOpenDelimiter(ch)) depth++;
+    if (isCloseDelimiter(ch)) depth--;
+    if (depth !== 0) continue;
+
+    const op = orderedOperators.find((candidate) => source.startsWith(candidate, index));
+    if (op) return { start: index, end: index + op.length, op };
+  }
+  return null;
+}
+
 export function splitTopLevel(source: string, delimiter: string): string[] {
   const parts: string[] = [];
   let depth = 0;

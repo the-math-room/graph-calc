@@ -128,6 +128,11 @@ export function createGraphView(
   };
 
   const drawRegionPlot = (plot: Extract<Plot, { kind: "region" }>, width: number, height: number): void => {
+    if (plot.smoothBoundary) {
+      drawSmoothRegionPlot(plot, width, height);
+      return;
+    }
+
     const cellSize = 6;
     const columns = Math.ceil(width / cellSize);
     const rows = Math.ceil(height / cellSize);
@@ -182,6 +187,92 @@ export function createGraphView(
     }
     ctx.stroke();
     ctx.restore();
+  };
+
+  const drawSmoothRegionPlot = (plot: Extract<Plot, { kind: "region" }>, width: number, height: number): void => {
+    if (!plot.smoothBoundary) return;
+    const points = sampleSmoothBoundary(plot, width, height);
+    if (points.length < 2) return;
+
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = plot.color;
+    fillSmoothRegion(points, plot.smoothBoundary.fillSide, width, height);
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = plot.color;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.setLineDash(regionBoundaryDash(plot.boundaryStyle));
+    strokePolyline(points);
+    ctx.restore();
+  };
+
+  const sampleSmoothBoundary = (plot: Extract<Plot, { kind: "region" }>, width: number, height: number): Point[] => {
+    const boundary = plot.smoothBoundary;
+    if (!boundary) return [];
+
+    const points: Point[] = [];
+    if (boundary.axis === "y") {
+      for (let sx = 0; sx <= width; sx += 2) {
+        const x = screenToWorld(sx, 0).x;
+        const y = evaluateBoundary(boundary.fn, x);
+        if (y === null) continue;
+        const screen = worldToScreen(x, y);
+        if (isVisibleBoundaryPoint(screen, width, height)) points.push(screen);
+      }
+      return points;
+    }
+
+    for (let sy = 0; sy <= height; sy += 2) {
+      const y = screenToWorld(0, sy).y;
+      const x = evaluateBoundary(boundary.fn, y);
+      if (x === null) continue;
+      const screen = worldToScreen(x, y);
+      if (isVisibleBoundaryPoint(screen, width, height)) points.push(screen);
+    }
+    return points;
+  };
+
+  const fillSmoothRegion = (points: Point[], fillSide: NonNullable<Extract<Plot, { kind: "region" }>["smoothBoundary"]>["fillSide"], width: number, height: number): void => {
+    ctx.beginPath();
+    if (fillSide === "below") {
+      ctx.moveTo(points[0].x, height);
+      points.forEach((point) => ctx.lineTo(point.x, point.y));
+      ctx.lineTo(points[points.length - 1].x, height);
+    } else if (fillSide === "above") {
+      ctx.moveTo(points[0].x, 0);
+      points.forEach((point) => ctx.lineTo(point.x, point.y));
+      ctx.lineTo(points[points.length - 1].x, 0);
+    } else if (fillSide === "left") {
+      ctx.moveTo(0, points[0].y);
+      points.forEach((point) => ctx.lineTo(point.x, point.y));
+      ctx.lineTo(0, points[points.length - 1].y);
+    } else {
+      ctx.moveTo(width, points[0].y);
+      points.forEach((point) => ctx.lineTo(point.x, point.y));
+      ctx.lineTo(width, points[points.length - 1].y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  };
+
+  const strokePolyline = (points: Point[]): void => {
+    ctx.beginPath();
+    let drawing = false;
+    let previous: Point | null = null;
+    for (const point of points) {
+      if (!drawing || !previous || screenDistance(point, previous) > 96) {
+        ctx.moveTo(point.x, point.y);
+        drawing = true;
+      } else {
+        ctx.lineTo(point.x, point.y);
+      }
+      previous = point;
+    }
+    ctx.stroke();
   };
 
   const drawParametricPlot = (plot: Extract<Plot, { kind: "parametric" }>, width: number, height: number): void => {
@@ -321,6 +412,19 @@ function evaluateRegion(plot: Extract<Plot, { kind: "region" }>, x: number, y: n
   } catch {
     return false;
   }
+}
+
+function evaluateBoundary(fn: (value: number) => RuntimeValue, value: number): number | null {
+  try {
+    const result = fn(value);
+    return typeof result === "number" && Number.isFinite(result) ? result : null;
+  } catch {
+    return null;
+  }
+}
+
+function isVisibleBoundaryPoint(point: Point, width: number, height: number): boolean {
+  return point.x >= -width && point.x <= width * 2 && point.y >= -height && point.y <= height * 2;
 }
 
 function regionBoundaryDash(style: Extract<Plot, { kind: "region" }>["boundaryStyle"]): number[] {
