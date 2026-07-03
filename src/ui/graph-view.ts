@@ -95,6 +95,10 @@ export function createGraphView(
       });
       return;
     }
+    if (plot.kind === "region") {
+      drawRegionPlot(plot, width, height);
+      return;
+    }
     if (plot.kind === "parametric") {
       drawParametricPlot(plot, width, height);
       return;
@@ -121,6 +125,63 @@ export function createGraphView(
       previousY = sy;
     }
     ctx.stroke();
+  };
+
+  const drawRegionPlot = (plot: Extract<Plot, { kind: "region" }>, width: number, height: number): void => {
+    const cellSize = 6;
+    const columns = Math.ceil(width / cellSize);
+    const rows = Math.ceil(height / cellSize);
+    const inside: boolean[][] = [];
+
+    for (let row = 0; row < rows; row++) {
+      inside[row] = [];
+      for (let column = 0; column < columns; column++) {
+        const world = screenToWorld(column * cellSize + cellSize / 2, row * cellSize + cellSize / 2);
+        inside[row][column] = evaluateRegion(plot, world.x, world.y);
+      }
+    }
+
+    ctx.save();
+    ctx.globalAlpha = 0.18;
+    ctx.fillStyle = plot.color;
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        if (inside[row][column]) ctx.fillRect(column * cellSize, row * cellSize, cellSize, cellSize);
+      }
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.strokeStyle = plot.color;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "butt";
+    ctx.setLineDash(regionBoundaryDash(plot.boundaryStyle));
+    ctx.beginPath();
+    for (let row = 0; row < rows; row++) {
+      for (let column = 0; column < columns; column++) {
+        if (!inside[row][column]) continue;
+        const x = column * cellSize;
+        const y = row * cellSize;
+        if (!inside[row - 1]?.[column]) {
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + cellSize, y);
+        }
+        if (!inside[row + 1]?.[column]) {
+          ctx.moveTo(x, y + cellSize);
+          ctx.lineTo(x + cellSize, y + cellSize);
+        }
+        if (!inside[row]?.[column - 1]) {
+          ctx.moveTo(x, y);
+          ctx.lineTo(x, y + cellSize);
+        }
+        if (!inside[row]?.[column + 1]) {
+          ctx.moveTo(x + cellSize, y);
+          ctx.lineTo(x + cellSize, y + cellSize);
+        }
+      }
+    }
+    ctx.stroke();
+    ctx.restore();
   };
 
   const drawParametricPlot = (plot: Extract<Plot, { kind: "parametric" }>, width: number, height: number): void => {
@@ -163,7 +224,8 @@ export function createGraphView(
     ctx.clearRect(0, 0, rect.width, rect.height);
     drawGrid(rect.width, rect.height);
 
-    state.plots.forEach((plot) => drawPlot(plot, rect.width, rect.height));
+    state.plots.filter((plot) => plot.kind === "region").forEach((plot) => drawPlot(plot, rect.width, rect.height));
+    state.plots.filter((plot) => plot.kind !== "region").forEach((plot) => drawPlot(plot, rect.width, rect.height));
     if (state.pointer) {
       const world = screenToWorld(state.pointer.x, state.pointer.y);
       readoutEl.value = `(${formatNumber(world.x)}, ${formatNumber(world.y)})`;
@@ -251,6 +313,20 @@ function evaluateParametricPoint(plot: Extract<Plot, { kind: "parametric" }>, t:
   } catch {
     return null;
   }
+}
+
+function evaluateRegion(plot: Extract<Plot, { kind: "region" }>, x: number, y: number): boolean {
+  try {
+    return plot.predicate(x, y);
+  } catch {
+    return false;
+  }
+}
+
+function regionBoundaryDash(style: Extract<Plot, { kind: "region" }>["boundaryStyle"]): number[] {
+  if (style === "inclusive") return [];
+  if (style === "strict") return [2, 4];
+  return [3, 2, 1, 2];
 }
 
 function screenDistance(a: Point, b: Point): number {

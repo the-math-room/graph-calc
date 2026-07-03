@@ -17,6 +17,13 @@ test("supports implicit multiplication in expression positions", () => {
   assert.equal(evaluateExpression("let x = 3 in x(2)"), 6);
 });
 
+test("evaluates chained comparisons without boolean-number leakage", () => {
+  assert.equal(evaluateExpression("0 < 1 < 2"), true);
+  assert.equal(evaluateExpression("0 < 3 < 2"), false);
+  assert.equal(evaluateExpression("2 >= 1 >= 1"), true);
+  assert.equal(evaluateExpression("2 == 2 != 3"), true);
+});
+
 test("tracks free names with lexical scope", () => {
   assert.deepEqual([...freeNames(parseExpression("x + t"))].sort(), ["t", "x"]);
   assert.deepEqual([...freeNames(parseExpression("fn(x) => x + t"))].sort(), ["t"]);

@@ -11,6 +11,35 @@ const layerOrder = new Map([
   ["ui", 3]
 ]);
 
+const imperativeShellOnlyPatterns = [
+  /\bdocument\b/,
+  /\bwindow\b/,
+  /\blocalStorage\b/,
+  /\bHTMLElement\b/,
+  /\bHTML[A-Za-z]*Element\b/,
+  /\bCanvasRenderingContext2D\b/,
+  /\bMathfieldElement\b/,
+  /\baddEventListener\b/,
+  /\bquerySelector\b/,
+  /\bclassList\b/,
+  /\bgetContext\b/,
+  /\bdevicePixelRatio\b/,
+  /\bMath\.random\b/,
+  /\bDate\./,
+  /\bnew Date\b/,
+  /\bperformance\b/,
+  /\bsetTimeout\b/,
+  /\bsetInterval\b/,
+  /\bfetch\b/,
+  /\bXMLHttpRequest\b/,
+  /\bconsole\./,
+  /\bprocess\./,
+  /\bglobalThis\b/,
+  /\bnavigator\b/,
+  /\blocation\b/,
+  /\bhistory\b/
+];
+
 test("module dependencies follow the documented layer direction", () => {
   const violations: string[] = [];
   for (const file of sourceFiles(srcRoot)) {
@@ -28,6 +57,20 @@ test("module dependencies follow the documented layer direction", () => {
         violations.push(`${relative(srcRoot, file)} imports ${specifier} from ${targetLayer}`);
       }
     }
+  }
+
+  assert.deepEqual(violations, []);
+});
+
+test("ambient effects stay in the UI shell", () => {
+  const violations: string[] = [];
+  for (const file of sourceFiles(srcRoot)) {
+    if (file.endsWith(".test.ts") || layerFor(file) === "ui") continue;
+    const source = readFileSync(file, "utf8");
+    const matches = imperativeShellOnlyPatterns
+      .filter((pattern) => pattern.test(source))
+      .map((pattern) => pattern.source);
+    if (matches.length > 0) violations.push(`${relative(srcRoot, file)} uses shell-only tokens: ${matches.join(", ")}`);
   }
 
   assert.deepEqual(violations, []);

@@ -49,6 +49,55 @@ test("compiles parametric curves as plots", () => {
   }
 });
 
+test("compiles inequalities as graph-plane regions", () => {
+  const program = compileWorkspace(["y < x^2", "x^2 + y^2 <= 1", "0 <= x <= 2", "1 < 2"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["y < x^2", "x^2 + y^2 <= 1", "0 <= x <= 2", "true"]);
+  assert.equal(program.plots.length, 3);
+
+  assert.equal(program.plots[0].kind, "region");
+  if (program.plots[0].kind === "region") {
+    assert.equal(program.plots[0].boundaryStyle, "strict");
+    assert.equal(program.plots[0].predicate(2, 3), true);
+    assert.equal(program.plots[0].predicate(2, 5), false);
+  }
+
+  assert.equal(program.plots[1].kind, "region");
+  if (program.plots[1].kind === "region") {
+    assert.equal(program.plots[1].boundaryStyle, "inclusive");
+    assert.equal(program.plots[1].predicate(0, 0), true);
+    assert.equal(program.plots[1].predicate(2, 0), false);
+  }
+
+  assert.equal(program.plots[2].kind, "region");
+  if (program.plots[2].kind === "region") {
+    assert.equal(program.plots[2].boundaryStyle, "inclusive");
+    assert.equal(program.plots[2].predicate(1, 100), true);
+    assert.equal(program.plots[2].predicate(3, 0), false);
+  }
+});
+
+test("tracks mixed strict and inclusive inequality boundaries", () => {
+  const program = compileWorkspace(["0 < x <= 2"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true]);
+  assert.equal(program.plots[0].kind, "region");
+  if (program.plots[0].kind === "region") assert.equal(program.plots[0].boundaryStyle, "mixed");
+});
+
+test("does not guess graph axes for inequalities over unknown names", () => {
+  const program = compileWorkspace(["y < t"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [false]);
+  assert.equal(program.rows[0].text, "Unknown names: t");
+  assert.equal(program.plots.length, 0);
+});
+
+test("does not render equality comparisons as shaded regions", () => {
+  const program = compileWorkspace(["x == y"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [false]);
+  assert.equal(program.rows[0].text, "Unknown names: x, y");
+  assert.equal(program.plots.length, 0);
+});
+
 test("rejects complex parametric bounds without an explicit real projection", () => {
   const program = compileWorkspace(["(cos(t), sin(t)) {e^(i*pi) <= t <= 0}"]);
   assert.deepEqual(program.rows.map((row) => row.ok), [false]);

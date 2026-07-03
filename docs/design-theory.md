@@ -11,6 +11,7 @@ Design Principles
 - Keep the evaluator small and semantic. Add core constructs to `src/language.ts` only when they are true language features, not editor conveniences.
 - Put sugar at explicit boundaries. Visual notation belongs in `src/syntax/math-syntax.ts`; row-level graphing and assignment conventions belong in `src/workspace/workspace-normalize.ts`; workspace rendering belongs in `src/workspace/workspace-render.ts`; evaluation belongs in `src/core/language.ts`.
 - Keep module dependencies flowing one way: `src/ui` may depend on `src/workspace`, `src/syntax`, and `src/core`; `src/workspace` may depend on `src/syntax` and `src/core`; `src/syntax` may depend on `src/core`; `src/core` depends on no app layer.
+- Keep exported core, syntax, and workspace APIs observationally pure. Local mutation is fine as an implementation detail for parsers, environments, dependency resolution, and bounded evaluation, but browser access, storage, timing, randomness, network calls, and logging belong in `src/ui`.
 - Prefer desugaring over parallel meanings. Subscripts desugar to function application, function definition sugar desugars to `fn`, and aggregate notation desugars to ordinary functions like `sum(fn(i) => ..., lo, hi)`.
 - Make equations symmetric when the target is clear. `t = 2` and `2 = t` are the same definition; `y = 2x` and `2x = y` are the same graph row.
 - Preserve graphing conventions only where they are graphing conventions. Multiple `y = ...` rows are allowed because graphing calculators do that; duplicate immutable definitions are errors.
@@ -32,3 +33,4 @@ Current Commitments
 - Parametric curves are explicit runtime values: `parametric(fn(t) => [x(t), y(t)], lo, hi)`. Desmos-shaped coordinate-pair notation such as `(cos(t), sin(t)) {0 <= t <= 2*pi}` is workspace sugar for that value.
 - Parametric bounds denote an ordered interval; `lo` must be less than or equal to `hi`. Reversed chained notation such as `2 >= t >= -2` is accepted only because it still describes the ordered interval `[-2, 2]`.
 - Complex values do not silently become real through numerical tolerance. Real-only contexts, such as parametric bounds, require an actual real number or an explicit projection we have deliberately added.
+- Inequalities are predicates over the graph plane when their free variables are `x` and/or `y`. Chained comparisons such as `0 <= x <= 2` have their ordinary mathematical meaning, not left-associated boolean arithmetic.

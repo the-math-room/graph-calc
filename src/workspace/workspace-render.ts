@@ -1,4 +1,4 @@
-import { Env, RuntimeValue, evaluate, freeNames, isRuntimeFunction, makeUserFunction, parseExpression } from "../core/language.js";
+import { Env, RuntimeValue, evaluate, freeNames, inequalityBoundaryStyle, isInequalityExpression, isRuntimeFunction, makeUserFunction, parseExpression } from "../core/language.js";
 import { CompiledRow } from "./workspace-compiled.js";
 import { NormalizedRow, isDefinitionRow } from "./workspace-normalize.js";
 import { Plot, RowResult, colors, formatValue, makePlot, summarizeValue } from "./workspace-values.js";
@@ -34,6 +34,7 @@ export function renderRows(
         continue;
       }
 
+      if (row.kind === "expression" && maybeRenderRegion(row, ast, env, rows, plots, index)) continue;
       if (row.kind === "expression" && maybeRenderBareGraph(row, ast, env, rows, plots, index)) continue;
 
       renderValueRow(compiled, env, rows, plots);
@@ -41,6 +42,32 @@ export function renderRows(
       rows[index] = { ok: false, text: error instanceof Error ? error.message : String(error) };
     }
   }
+}
+
+function maybeRenderRegion(
+  row: Extract<NormalizedRow, { kind: "expression" }>,
+  ast: ReturnType<typeof parseExpression>,
+  env: Env,
+  rows: RowResult[],
+  plots: Plot[],
+  index: number
+): boolean {
+  if (!isInequalityExpression(ast)) return false;
+
+  const unbound = unboundNames(ast, env);
+  if (unbound.length === 0) return false;
+  const unknown = unbound.filter((name) => name !== "x" && name !== "y");
+  if (unknown.length > 0) throw new Error(`Unknown names: ${unknown.join(", ")}`);
+
+  plots.push({
+    kind: "region",
+    label: row.source,
+    color: colors[index % colors.length],
+    predicate: makeRegionPredicate(ast, env),
+    boundaryStyle: inequalityBoundaryStyle(ast)
+  });
+  rows[index] = { ok: true, text: row.expr };
+  return true;
 }
 
 function maybeRenderBareGraph(
@@ -64,6 +91,11 @@ function maybeRenderBareGraph(
   }
   if (unbound.length > 1) throw new Error(`Unknown names: ${unbound.join(", ")}`);
   return false;
+}
+
+function makeRegionPredicate(ast: ReturnType<typeof parseExpression>, env: Env): (x: number, y: number) => boolean {
+  const predicate = makeUserFunction(["x", "y"], ast, env);
+  return (x, y) => predicate(x, y) === true;
 }
 
 function renderValueRow(

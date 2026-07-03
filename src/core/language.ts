@@ -13,6 +13,7 @@ type Ast =
   | { type: "array"; items: Ast[] }
   | { type: "unary"; op: string; expr: Ast }
   | { type: "binary"; op: string; left: Ast; right: Ast }
+  | { type: "comparison-chain"; first: Ast; rest: { op: string; expr: Ast }[] }
   | { type: "let"; name: string; value: Ast; body: Ast }
   | { type: "if"; test: Ast; consequent: Ast; alternate: Ast }
   | { type: "fn"; params: string[]; body: Ast }
@@ -91,6 +92,8 @@ export function evaluate(ast: Ast, env: Env): RuntimeValue {
       return applyUnary(ast.op, evaluate(ast.expr, env));
     case "binary":
       return applyBinary(ast.op, evaluate(ast.left, env), evaluate(ast.right, env));
+    case "comparison-chain":
+      return evaluateComparisonChain(ast, env);
     case "let": {
       const local = new Env(env);
       local.set(ast.name, evaluate(ast.value, env));
@@ -131,6 +134,8 @@ export function usesName(ast: Ast, name: string): boolean {
       return usesName(ast.expr, name);
     case "binary":
       return usesName(ast.left, name) || usesName(ast.right, name);
+    case "comparison-chain":
+      return usesName(ast.first, name) || ast.rest.some((item) => usesName(item.expr, name));
     case "let":
       return usesName(ast.value, name) || (ast.name !== name && usesName(ast.body, name));
     case "if":
@@ -138,6 +143,25 @@ export function usesName(ast: Ast, name: string): boolean {
     case "call":
       return usesName(ast.callee, name) || ast.args.some((arg) => usesName(arg, name));
   }
+}
+
+export function isComparisonExpression(ast: Ast): boolean {
+  return ast.type === "comparison-chain" || (ast.type === "binary" && comparisonOperators.has(ast.op));
+}
+
+export function isInequalityExpression(ast: Ast): boolean {
+  if (ast.type === "binary") return inequalityOperators.has(ast.op);
+  return ast.type === "comparison-chain" && ast.rest.some((item) => inequalityOperators.has(item.op));
+}
+
+export type InequalityBoundaryStyle = "inclusive" | "strict" | "mixed";
+
+export function inequalityBoundaryStyle(ast: Ast): InequalityBoundaryStyle {
+  const ops = inequalityOpsIn(ast);
+  const hasStrict = ops.some((op) => op === "<" || op === ">");
+  const hasInclusive = ops.some((op) => op === "<=" || op === ">=");
+  if (hasStrict && hasInclusive) return "mixed";
+  return hasStrict ? "strict" : "inclusive";
 }
 
 export function freeNames(ast: Ast, bound = new Set<string>()): Set<string> {
@@ -153,6 +177,8 @@ export function freeNames(ast: Ast, bound = new Set<string>()): Set<string> {
       return freeNames(ast.expr, bound);
     case "binary":
       return unionSets([freeNames(ast.left, bound), freeNames(ast.right, bound)]);
+    case "comparison-chain":
+      return unionSets([freeNames(ast.first, bound), ...ast.rest.map((item) => freeNames(item.expr, bound))]);
     case "let": {
       const valueNames = freeNames(ast.value, bound);
       const bodyBound = new Set(bound);
@@ -313,7 +339,19 @@ class Parser {
       this.take("arrow");
       return { type: "fn", params, body: this.parseSpecial() };
     }
-    return this.parseBinary(0);
+    return this.parseComparisonChain();
+  }
+
+  private parseComparisonChain(): Ast {
+    let left = this.parseBinary(0);
+    const rest: { op: string; expr: Ast }[] = [];
+    while (this.peek().type === "op" && comparisonOperators.has(String(this.peek().value))) {
+      const op = String(this.take("op").value);
+      rest.push({ op, expr: this.parseBinary(0) });
+    }
+    if (rest.length === 0) return left;
+    if (rest.length === 1) return { type: "binary", op: rest[0].op, left, right: rest[0].expr };
+    return { type: "comparison-chain", first: left, rest };
   }
 
   private parseBinary(minPower: number): Ast {
@@ -418,8 +456,18 @@ class Parser {
   }
 }
 
+const comparisonOperators = new Set(["==", "!=", "<", ">", "<=", ">="]);
+const inequalityOperators = new Set(["<", ">", "<=", ">="]);
+
+function inequalityOpsIn(ast: Ast): string[] {
+  if (ast.type === "binary" && inequalityOperators.has(ast.op)) return [ast.op];
+  if (ast.type === "comparison-chain") return ast.rest.map((item) => item.op).filter((op) => inequalityOperators.has(op));
+  return [];
+}
+
 function precedence(op: string): number {
-  return { "==": 1, "!=": 1, "<": 2, ">": 2, "<=": 2, ">=": 2, "+": 3, "-": 3, "*": 4, "/": 4, "^": 5 }[op] ?? -1;
+  if (comparisonOperators.has(op)) return -1;
+  return { "+": 3, "-": 3, "*": 4, "/": 4, "^": 5 }[op] ?? -1;
 }
 
 function unionSets<T>(sets: Set<T>[]): Set<T> {
@@ -450,6 +498,22 @@ function applyBinary(op: string, left: RuntimeValue, right: RuntimeValue): Runti
   if (op === "==") return left === right;
   if (op === "!=") return left !== right;
   throw new Error(`Unknown operator: ${op}`);
+}
+
+function evaluateComparisonChain(ast: Extract<Ast, { type: "comparison-chain" }>, env: Env): boolean {
+  let left = evaluate(ast.first, env);
+  for (const item of ast.rest) {
+    const right = evaluate(item.expr, env);
+    if (!applyComparison(item.op, left, right)) return false;
+    left = right;
+  }
+  return true;
+}
+
+function applyComparison(op: string, left: RuntimeValue, right: RuntimeValue): boolean {
+  const result = applyBinary(op, left, right);
+  if (typeof result !== "boolean") throw new Error(`Unknown comparison: ${op}`);
+  return result;
 }
 
 function wrapFunction(fn: (...args: RuntimeValue[]) => RuntimeValue, arity: number): RuntimeFunction {

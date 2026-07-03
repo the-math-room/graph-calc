@@ -5,6 +5,7 @@ export type RowResult = { ok: boolean; text: string };
 export type GraphPoint = [number, number];
 export type Plot =
   | { kind: "function" | "expression"; fn: (x: number) => RuntimeValue; label: string; color: string }
+  | { kind: "region"; predicate: (x: number, y: number) => boolean; boundaryStyle: "inclusive" | "strict" | "mixed"; label: string; color: string }
   | { kind: "parametric"; curve: ParametricCurve; label: string; color: string }
   | { kind: "points"; points: GraphPoint[]; label: string; color: string };
 
