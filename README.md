@@ -24,6 +24,10 @@ Project structure:
 - `src/workspace.ts` adapts expression rows into graphable plots and user-facing result text.
 - `src/language.test.ts` covers the functional language and workspace compilation behavior.
 
+Design notes:
+
+- [Design theory](docs/design-theory.md) records the principles for extending the tool.
+
 Syntax sugar lives at explicit boundaries:
 
 - `src/language.ts` owns expression-level sugar such as implicit multiplication (`2x`, `2(x + 1)`).
