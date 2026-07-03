@@ -7,10 +7,12 @@ import type { Plot } from "./workspace-values.js";
 
 export function sampleRegion(plot: Extract<Plot, { kind: "region" }>, viewport: GraphViewport): SampledPlot {
   if (plot.smoothBoundary) {
+    const points = sampleSmoothBoundary(plot, viewport);
     return {
       ...sampledBase(plot),
       kind: "smooth-region",
-      points: sampleSmoothBoundary(plot, viewport),
+      points,
+      fillAll: points.length < 2 && evaluateRegionAtViewportCenter(plot, viewport),
       fillSide: plot.smoothBoundary.fillSide,
       boundaryStyle: plot.boundaryStyle
     };
@@ -167,6 +169,11 @@ function evaluateRegion(plot: Extract<Plot, { kind: "region" }>, x: number, y: n
   } catch {
     return false;
   }
+}
+
+function evaluateRegionAtViewportCenter(plot: Extract<Plot, { kind: "region" }>, viewport: GraphViewport): boolean {
+  const world = screenToWorld(viewport, viewport.width / 2, viewport.height / 2);
+  return evaluateRegion(plot, world.x, world.y);
 }
 
 function evaluateBoundary(fn: (value: number) => RuntimeValue, value: number): number | null {

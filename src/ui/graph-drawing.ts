@@ -236,13 +236,19 @@ function drawRegionGridBoundary(ctx: CanvasRenderingContext2D, plot: RegionGridP
 
 function drawSmoothRegionPlot(ctx: CanvasRenderingContext2D, plot: Extract<SampledPlot, { kind: "smooth-region" }>, width: number, height: number, state: GraphViewState): void {
   const points = plot.points.map((point) => projectPoint(state, width, height, point));
-  if (points.length < 2) return;
+  if (points.length < 2 && !plot.fillAll) return;
 
   ctx.save();
   ctx.globalAlpha = 0.18;
   ctx.fillStyle = plot.color;
-  fillSmoothRegion(ctx, points, plot.fillSide, width, height);
+  if (plot.fillAll) {
+    ctx.fillRect(0, 0, width, height);
+  } else {
+    fillSmoothRegion(ctx, points, plot.fillSide, width, height);
+  }
   ctx.restore();
+
+  if (points.length < 2) return;
 
   ctx.save();
   ctx.strokeStyle = plot.color;
