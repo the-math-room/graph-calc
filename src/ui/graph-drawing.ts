@@ -11,7 +11,8 @@ export type GraphViewState = {
   sampledViewport: GraphViewport | null;
 };
 
-const regionFillCache = new WeakMap<ImplicitRegionPlot, HTMLCanvasElement>();
+// Cached per sampled plot object; resampling creates new plot objects, which naturally invalidates these images.
+const implicitRegionFillCache = new WeakMap<ImplicitRegionPlot, HTMLCanvasElement>();
 
 export function drawGraphFrame(
   ctx: CanvasRenderingContext2D,
@@ -117,7 +118,7 @@ function drawPlot(ctx: CanvasRenderingContext2D, plot: SampledPlot, width: numbe
 }
 
 function drawImplicitRegionPlot(ctx: CanvasRenderingContext2D, plot: ImplicitRegionPlot, width: number, height: number, state: GraphViewState): void {
-  const fill = state.sampledViewport ? regionFillImage(plot, state.sampledViewport) : null;
+  const fill = state.sampledViewport ? implicitRegionFillImage(plot, state.sampledViewport) : null;
   if (fill && state.sampledViewport) {
     const topLeft = projectPoint(state, width, height, { x: 0, y: 0 });
     const bottomRight = projectPoint(state, width, height, { x: state.sampledViewport.width, y: state.sampledViewport.height });
@@ -126,17 +127,17 @@ function drawImplicitRegionPlot(ctx: CanvasRenderingContext2D, plot: ImplicitReg
     ctx.save();
     ctx.globalAlpha = 0.18;
     ctx.fillStyle = plot.color;
-    drawRegionFillRuns(ctx, plot.fillRuns, width, height, state);
-    drawRegionFillPolygons(ctx, plot.fillPolygons, width, height, state);
+    drawImplicitRegionFillRuns(ctx, plot.fillRuns, width, height, state);
+    drawImplicitRegionFillPolygons(ctx, plot.fillPolygons, width, height, state);
     ctx.restore();
   }
 
   drawImplicitRegionBoundary(ctx, plot, width, height, state);
 }
 
-function regionFillImage(plot: ImplicitRegionPlot, viewport: GraphViewport): HTMLCanvasElement | null {
+function implicitRegionFillImage(plot: ImplicitRegionPlot, viewport: GraphViewport): HTMLCanvasElement | null {
   if (plot.fillRuns.length === 0 && plot.fillPolygons.length === 0) return null;
-  const cached = regionFillCache.get(plot);
+  const cached = implicitRegionFillCache.get(plot);
   if (cached) return cached;
 
   const canvas = document.createElement("canvas");
@@ -147,13 +148,13 @@ function regionFillImage(plot: ImplicitRegionPlot, viewport: GraphViewport): HTM
 
   ctx.globalAlpha = 0.18;
   ctx.fillStyle = plot.color;
-  drawRegionFillRunsInSampleSpace(ctx, plot.fillRuns);
-  drawRegionFillPolygonsInSampleSpace(ctx, plot.fillPolygons);
-  regionFillCache.set(plot, canvas);
+  drawImplicitRegionFillRunsInSampleSpace(ctx, plot.fillRuns);
+  drawImplicitRegionFillPolygonsInSampleSpace(ctx, plot.fillPolygons);
+  implicitRegionFillCache.set(plot, canvas);
   return canvas;
 }
 
-function drawRegionFillPolygons(ctx: CanvasRenderingContext2D, polygons: Extract<SampledPlot, { kind: "implicit-region" }>["fillPolygons"], width: number, height: number, state: GraphViewState): void {
+function drawImplicitRegionFillPolygons(ctx: CanvasRenderingContext2D, polygons: ImplicitRegionPlot["fillPolygons"], width: number, height: number, state: GraphViewState): void {
   ctx.beginPath();
   for (const polygon of polygons) {
     polygon.forEach((point, index) => {
@@ -169,7 +170,7 @@ function drawRegionFillPolygons(ctx: CanvasRenderingContext2D, polygons: Extract
   ctx.fill();
 }
 
-function drawRegionFillRuns(ctx: CanvasRenderingContext2D, runs: ImplicitRegionPlot["fillRuns"], width: number, height: number, state: GraphViewState): void {
+function drawImplicitRegionFillRuns(ctx: CanvasRenderingContext2D, runs: ImplicitRegionPlot["fillRuns"], width: number, height: number, state: GraphViewState): void {
   for (const run of runs) {
     const topLeft = projectPoint(state, width, height, { x: run.x, y: run.y });
     const bottomRight = projectPoint(state, width, height, { x: run.x + run.width, y: run.y + run.height });
@@ -177,13 +178,13 @@ function drawRegionFillRuns(ctx: CanvasRenderingContext2D, runs: ImplicitRegionP
   }
 }
 
-function drawRegionFillRunsInSampleSpace(ctx: CanvasRenderingContext2D, runs: ImplicitRegionPlot["fillRuns"]): void {
+function drawImplicitRegionFillRunsInSampleSpace(ctx: CanvasRenderingContext2D, runs: ImplicitRegionPlot["fillRuns"]): void {
   for (const run of runs) {
     ctx.fillRect(run.x, run.y, run.width, run.height);
   }
 }
 
-function drawRegionFillPolygonsInSampleSpace(ctx: CanvasRenderingContext2D, polygons: ImplicitRegionPlot["fillPolygons"]): void {
+function drawImplicitRegionFillPolygonsInSampleSpace(ctx: CanvasRenderingContext2D, polygons: ImplicitRegionPlot["fillPolygons"]): void {
   ctx.beginPath();
   for (const polygon of polygons) {
     polygon.forEach((point, index) => {

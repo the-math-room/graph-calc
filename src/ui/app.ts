@@ -310,6 +310,9 @@ function renderExpressions(): void {
       renderExpressions();
       refreshWorkspace();
     },
+    onMove(fromIndex, toIndex) {
+      moveExpression(fromIndex, toIndex);
+    },
     onParametricTemplate(index, template) {
       state.expressions[index] = {
         ...state.expressions[index],
@@ -325,6 +328,20 @@ function renderExpressions(): void {
     onCommitNew: commitNewExpression,
     onDiagnostics: copyRowDiagnostics
   });
+}
+
+function moveExpression(fromIndex: number, toIndex: number): void {
+  if (fromIndex < 0 || fromIndex >= state.expressions.length) return;
+  const target = Math.max(0, Math.min(state.expressions.length, toIndex));
+  if (target === fromIndex || target === fromIndex + 1) return;
+
+  const [expression] = state.expressions.splice(fromIndex, 1);
+  const adjustedTarget = target > fromIndex ? target - 1 : target;
+  state.expressions.splice(adjustedTarget, 0, expression);
+  saveExpressions();
+  renderExpressions();
+  refreshWorkspace();
+  focusExpression(adjustedTarget);
 }
 
 function commitNewExpression(source: string, latex: string, mode: ExpressionMode): void {

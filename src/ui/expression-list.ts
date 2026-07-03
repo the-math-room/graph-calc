@@ -9,6 +9,7 @@ export type ExpressionListCallbacks = {
   onLatexChange(index: number, latex: string): void;
   onSourceChange(index: number, source: string): void;
   onModeToggle(index: number): void;
+  onMove(fromIndex: number, toIndex: number): void;
   onRemove(index: number): void;
   onParametricTemplate(index: number, template: string): void;
   onCommitNew(source: string, latex: string, mode: ExpressionMode): void;
@@ -20,10 +21,47 @@ export function renderExpressionList(listEl: HTMLElement, expressions: Expressio
   expressions.forEach((expression, index) => {
     const card = document.createElement("article");
     card.className = "expression-card";
+    card.dataset.expressionCardIndex = String(index);
+    card.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      const position = dragPosition(event, card);
+      card.classList.toggle("drop-before", position === "before");
+      card.classList.toggle("drop-after", position === "after");
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    });
+    card.addEventListener("dragleave", () => clearDropClasses(card));
+    card.addEventListener("drop", (event) => {
+      event.preventDefault();
+      clearDropClasses(card);
+      const from = Number(event.dataTransfer?.getData("text/plain") ?? NaN);
+      if (!Number.isInteger(from)) return;
+      const position = dragPosition(event, card);
+      const to = position === "before" ? index : index + 1;
+      callbacks.onMove(from, to);
+    });
+
+    const swatchRail = document.createElement("div");
+    swatchRail.className = "swatch-rail";
+    swatchRail.draggable = true;
+    swatchRail.tabIndex = 0;
+    swatchRail.title = "Drag to reorder";
+    swatchRail.setAttribute("role", "button");
+    swatchRail.setAttribute("aria-label", "Drag expression to reorder");
+    swatchRail.addEventListener("dragstart", (event) => {
+      card.classList.add("is-dragging");
+      if (!event.dataTransfer) return;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", String(index));
+    });
+    swatchRail.addEventListener("dragend", () => {
+      card.classList.remove("is-dragging");
+      listEl.querySelectorAll(".drop-before, .drop-after").forEach((element) => clearDropClasses(element));
+    });
 
     const swatch = document.createElement("div");
     swatch.className = "swatch";
     swatch.style.background = colorForKey(expression.id);
+    swatchRail.append(swatch);
 
     const body = document.createElement("div");
     body.className = "expression-body";
@@ -65,10 +103,19 @@ export function renderExpressionList(listEl: HTMLElement, expressions: Expressio
     actions.append(remove, modeToggle, diagnostics);
 
     body.append(input, prompt, result);
-    card.append(swatch, body, actions);
+    card.append(swatchRail, body, actions);
     listEl.append(card);
   });
   renderNewExpressionRow(listEl, callbacks);
+}
+
+function dragPosition(event: DragEvent, card: HTMLElement): "before" | "after" {
+  const rect = card.getBoundingClientRect();
+  return event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+}
+
+function clearDropClasses(element: Element): void {
+  element.classList.remove("drop-before", "drop-after");
 }
 
 export function focusExpression(listEl: HTMLElement, index: number): void {
@@ -140,6 +187,9 @@ function renderNewExpressionRow(listEl: HTMLElement, callbacks: ExpressionListCa
 
   const swatch = document.createElement("div");
   swatch.className = "swatch";
+  const swatchRail = document.createElement("div");
+  swatchRail.className = "swatch-rail";
+  swatchRail.append(swatch);
 
   const body = document.createElement("div");
   body.className = "expression-body";
@@ -179,7 +229,7 @@ function renderNewExpressionRow(listEl: HTMLElement, callbacks: ExpressionListCa
   spacer.className = "row-actions-spacer";
 
   body.append(input, prompt, result);
-  card.append(swatch, body, spacer);
+  card.append(swatchRail, body, spacer);
   listEl.append(card);
 }
 
