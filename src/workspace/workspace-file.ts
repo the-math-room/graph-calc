@@ -3,6 +3,7 @@ export const workspaceFileSchema = "lambda-graph.workspace.v1" as const;
 export type WorkspaceFileMode = "pretty" | "text";
 
 export type WorkspaceFileRowV1 = {
+  id?: string;
   source: string;
   latex?: string;
   mode: WorkspaceFileMode;
@@ -41,6 +42,7 @@ export function readWorkspaceFile(value: unknown): WorkspaceFileV1 | null {
 function readWorkspaceFileRow(value: unknown): WorkspaceFileRowV1 | null {
   if (!isRecord(value)) return null;
   if (typeof value.source !== "string") return null;
+  if (value.id !== undefined && typeof value.id !== "string") return null;
   if (value.mode !== "pretty" && value.mode !== "text") return null;
   if (value.latex !== undefined && typeof value.latex !== "string") return null;
 
@@ -48,6 +50,7 @@ function readWorkspaceFileRow(value: unknown): WorkspaceFileRowV1 | null {
     source: value.source,
     mode: value.mode
   };
+  if (typeof value.id === "string") row.id = value.id;
   if (typeof value.latex === "string") row.latex = value.latex;
   return row;
 }

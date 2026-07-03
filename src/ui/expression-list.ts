@@ -1,9 +1,9 @@
 import type { MathfieldElement } from "mathlive";
 import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "../syntax/math-syntax.js";
-import { colors, parametricPromptFor } from "../workspace/workspace.js";
+import { colorForKey, parametricPromptFor } from "../workspace/workspace.js";
 
 export type ExpressionMode = "pretty" | "text";
-export type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };
+export type ExpressionRow = { id: string; source: string; latex: string; mode: ExpressionMode };
 
 export type ExpressionListCallbacks = {
   onLatexChange(index: number, latex: string): void;
@@ -23,7 +23,7 @@ export function renderExpressionList(listEl: HTMLElement, expressions: Expressio
 
     const swatch = document.createElement("div");
     swatch.className = "swatch";
-    swatch.style.background = colors[index % colors.length];
+    swatch.style.background = colorForKey(expression.id);
 
     const body = document.createElement("div");
     body.className = "expression-body";

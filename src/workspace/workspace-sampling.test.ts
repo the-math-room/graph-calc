@@ -38,6 +38,13 @@ test("samples implicit equality rows as contours", () => {
   assert.ok(sampled[0].segments.length > 0);
 });
 
+test("uses caller supplied row colors for plots", () => {
+  const program = compileWorkspace(["x", "x^2"], ["#111111", "#222222"]);
+
+  assert.equal(program.plots[0].color, "#111111");
+  assert.equal(program.plots[1].color, "#222222");
+});
+
 test("samples implicit regions more finely when idle than while interacting", () => {
   const program = compileWorkspace(["x^2 + y^2 <= 1"]);
   const baseViewport = {

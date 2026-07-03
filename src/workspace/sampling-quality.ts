@@ -11,12 +11,12 @@ type SamplingQuality = {
 
 const samplingQuality: Record<SamplingCellKind, { idle: SamplingQuality; interactive: SamplingQuality }> = {
   region: {
-    idle: { worldStep: 1 / 22, minCellSize: 3, maxCellSize: 7, maxCells: 70_000 },
-    interactive: { worldStep: 1 / 9, minCellSize: 8, maxCellSize: 14, maxCells: 28_000 }
+    idle: { worldStep: 1 / 32, minCellSize: 2, maxCellSize: 4, maxCells: 160_000 },
+    interactive: { worldStep: 1 / 14, minCellSize: 5, maxCellSize: 9, maxCells: 65_000 }
   },
   contour: {
-    idle: { worldStep: 1 / 26, minCellSize: 3, maxCellSize: 6, maxCells: 85_000 },
-    interactive: { worldStep: 1 / 10, minCellSize: 8, maxCellSize: 13, maxCells: 32_000 }
+    idle: { worldStep: 1 / 32, minCellSize: 2, maxCellSize: 4, maxCells: 160_000 },
+    interactive: { worldStep: 1 / 14, minCellSize: 5, maxCellSize: 9, maxCells: 65_000 }
   }
 };
 

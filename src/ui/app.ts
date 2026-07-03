@@ -7,6 +7,7 @@ import { latexToSource, sourceToLatex } from "../syntax/math-syntax.js";
 import {
   RowResult,
   WorkspaceFileV1,
+  colorForKey,
   compileWorkspace,
   examples,
   readWorkspaceFile,
@@ -98,11 +99,12 @@ function loadExpressions(): ExpressionRow[] {
 }
 
 function readStoredExpression(value: unknown): ExpressionRow | null {
-  if (typeof value === "string") return { source: value, latex: sourceToLatex(value), mode: "pretty" };
+  if (typeof value === "string") return createExpressionRow(value, sourceToLatex(value), "pretty");
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<ExpressionRow>;
   if (typeof row.source !== "string") return null;
   return {
+    id: typeof row.id === "string" ? row.id : newExpressionId(),
     source: row.source,
     latex: typeof row.latex === "string" ? row.latex : sourceToLatex(row.source),
     mode: row.mode === "text" ? "text" : "pretty"
@@ -110,7 +112,15 @@ function readStoredExpression(value: unknown): ExpressionRow | null {
 }
 
 function exampleRows(): ExpressionRow[] {
-  return examples.map((source) => ({ source, latex: sourceToLatex(source), mode: "pretty" }));
+  return examples.map((source) => createExpressionRow(source, sourceToLatex(source), "pretty"));
+}
+
+function createExpressionRow(source: string, latex: string, mode: ExpressionMode): ExpressionRow {
+  return { id: newExpressionId(), source, latex, mode };
+}
+
+function newExpressionId(): string {
+  return `row-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function loadExpressionSizeScale(): number {
@@ -148,6 +158,7 @@ function currentWorkspaceFile(): WorkspaceFileV1 {
   return {
     schema: workspaceFileSchema,
     rows: state.expressions.map((expression) => ({
+      id: expression.id,
       source: expression.source,
       latex: expression.latex,
       mode: expression.mode
@@ -188,6 +199,7 @@ async function importWorkspace(): Promise<void> {
 
 function applyWorkspaceFile(file: WorkspaceFileV1): void {
   state.expressions = file.rows.map((row) => ({
+    id: row.id ?? newExpressionId(),
     source: row.source,
     latex: row.latex ?? sourceToLatex(row.source),
     mode: row.mode
@@ -268,7 +280,7 @@ function addExpression(source: string, mode: ExpressionMode = "pretty"): void {
     focusNewExpression(listEl);
     return;
   }
-  state.expressions.push({ source, latex: sourceToLatex(source), mode });
+  state.expressions.push(createExpressionRow(source, sourceToLatex(source), mode));
   saveExpressions();
   renderExpressions();
   refreshWorkspace();
@@ -319,7 +331,7 @@ function commitNewExpression(source: string, latex: string, mode: ExpressionMode
   const trimmed = source.trim();
   if (!trimmed) return;
   const index = state.expressions.length;
-  state.expressions.push({ source: trimmed, latex, mode });
+  state.expressions.push(createExpressionRow(trimmed, latex, mode));
   saveExpressions();
   renderExpressions();
   refreshWorkspace();
@@ -391,7 +403,10 @@ async function copyRowDiagnostics(index: number, button: HTMLButtonElement): Pro
 }
 
 function compileAndSampleWorkspace(): CurrentProgram {
-  const program = compileWorkspace(state.expressions.map((expression) => expression.source));
+  const program = compileWorkspace(
+    state.expressions.map((expression) => expression.source),
+    state.expressions.map((expression) => colorForKey(expression.id))
+  );
   const viewport = graphView.viewport();
   return {
     rows: program.rows,

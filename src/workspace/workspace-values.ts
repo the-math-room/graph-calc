@@ -21,6 +21,15 @@ export type WorkspaceProgram = {
 
 export const colors = ["#d73a31", "#2374ab", "#1f8a5b", "#8f49b8", "#d18b00", "#0b8793", "#c43c78", "#4f6bed"];
 
+export function colorForKey(key: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < key.length; index++) {
+    hash ^= key.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return colors[Math.abs(hash) % colors.length];
+}
+
 export const examples = [
   "f = fn(x) => sin(x) + 0.35 * sin(4 * x)",
   "f",

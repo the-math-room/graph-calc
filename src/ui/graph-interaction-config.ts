@@ -5,7 +5,7 @@ export const graphInteraction = {
   keyboardZoomPerSecond: 3.1,
   wheelZoomInFactor: 1.12,
   wheelZoomOutFactor: 0.89,
-  interactiveRefreshMs: 120,
+  interactiveRefreshMs: 200,
   idleOverscan: 0.2,
   interactiveOverscan: 0.35
 } as const;

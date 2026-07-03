@@ -8,7 +8,7 @@ test("reads versioned workspace files losslessly", () => {
   const file = readWorkspaceFile({
     schema: workspaceFileSchema,
     rows: [
-      { source: "x^2", latex: "x^2", mode: "pretty" },
+      { id: "row-a", source: "x^2", latex: "x^2", mode: "pretty" },
       { source: "(cos(t), sin(t)) {0 <= t <= 2*pi}", mode: "text" }
     ],
     view: {
@@ -20,7 +20,7 @@ test("reads versioned workspace files losslessly", () => {
   assert.deepEqual(file, {
     schema: workspaceFileSchema,
     rows: [
-      { source: "x^2", latex: "x^2", mode: "pretty" },
+      { id: "row-a", source: "x^2", latex: "x^2", mode: "pretty" },
       { source: "(cos(t), sin(t)) {0 <= t <= 2*pi}", mode: "text" }
     ],
     view: {

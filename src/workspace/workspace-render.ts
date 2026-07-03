@@ -9,7 +9,8 @@ export function renderRows(
   rows: RowResult[],
   plots: Plot[],
   rowErrors: Map<number, string>,
-  caseDefinitionRows: Set<number> = new Set()
+  caseDefinitionRows: Set<number> = new Set(),
+  rowColors: string[] = []
 ): void {
   let explicitGraphAxis: string | null = null;
 
@@ -29,18 +30,18 @@ export function renderRows(
           kind: "expression",
           rowIndex: index,
           label: row.source,
-          color: colors[index % colors.length],
+          color: colorForRow(index, rowColors),
           fn: makeGraphFunction(ast, env, axisResult.axis)
         });
         rows[index] = { ok: true, text: `y = ${row.expr}` };
         continue;
       }
 
-      if (row.kind === "expression" && maybeRenderContour(row, ast, env, rows, plots, index)) continue;
-      if (row.kind === "expression" && maybeRenderRegion(row, ast, env, rows, plots, index)) continue;
-      if (row.kind === "expression" && maybeRenderBareGraph(row, ast, env, rows, plots, index)) continue;
+      if (row.kind === "expression" && maybeRenderContour(row, ast, env, rows, plots, index, rowColors)) continue;
+      if (row.kind === "expression" && maybeRenderRegion(row, ast, env, rows, plots, index, rowColors)) continue;
+      if (row.kind === "expression" && maybeRenderBareGraph(row, ast, env, rows, plots, index, rowColors)) continue;
 
-      renderValueRow(compiled, env, rows, plots, caseDefinitionRows);
+      renderValueRow(compiled, env, rows, plots, caseDefinitionRows, rowColors);
     } catch (error) {
       rows[index] = { ok: false, text: error instanceof Error ? error.message : String(error) };
     }
@@ -53,7 +54,8 @@ function maybeRenderContour(
   env: Env,
   rows: RowResult[],
   plots: Plot[],
-  index: number
+  index: number,
+  rowColors: string[]
 ): boolean {
   if (!isEqualityExpression(ast)) return false;
 
@@ -68,7 +70,7 @@ function maybeRenderContour(
     kind: "contour",
     rowIndex: index,
     label: row.source,
-    color: colors[index % colors.length],
+    color: colorForRow(index, rowColors),
     boundaryValue
   });
   rows[index] = { ok: true, text: row.expr };
@@ -81,7 +83,8 @@ function maybeRenderRegion(
   env: Env,
   rows: RowResult[],
   plots: Plot[],
-  index: number
+  index: number,
+  rowColors: string[]
 ): boolean {
   if (!isInequalityExpression(ast)) return false;
 
@@ -94,7 +97,7 @@ function maybeRenderRegion(
     kind: "region",
     rowIndex: index,
     label: row.source,
-    color: colors[index % colors.length],
+    color: colorForRow(index, rowColors),
     predicate: makeRegionPredicate(ast, env),
     boundaryStyle: inequalityBoundaryStyle(ast),
     smoothBoundary: makeSmoothRegionBoundary(ast, env),
@@ -110,7 +113,8 @@ function maybeRenderBareGraph(
   env: Env,
   rows: RowResult[],
   plots: Plot[],
-  index: number
+  index: number,
+  rowColors: string[]
 ): boolean {
   const unbound = unboundNames(ast, env);
   if (unbound.length === 1 && unbound[0] === "x") {
@@ -118,7 +122,7 @@ function maybeRenderBareGraph(
       kind: "expression",
       rowIndex: index,
       label: row.source,
-      color: colors[index % colors.length],
+      color: colorForRow(index, rowColors),
       fn: makeUserFunction(["x"], ast, env)
     });
     rows[index] = { ok: true, text: `y = ${row.expr}` };
@@ -165,14 +169,15 @@ function renderValueRow(
   env: Env,
   rows: RowResult[],
   plots: Plot[],
-  caseDefinitionRows: Set<number>
+  caseDefinitionRows: Set<number>,
+  rowColors: string[]
 ): void {
   const { index, row, ast } = compiled;
   const isDefinition = isDefinitionRow(row);
   const label = isDefinition ? row.name : row.source;
   const value = isDefinition ? env.get(row.name) : evaluate(ast, env);
   if (!caseDefinitionRows.has(index)) {
-    const plot = makePlot(value, label, colors[index % colors.length], index, row);
+    const plot = makePlot(value, label, colorForRow(index, rowColors), index, row);
     if (plot) plots.push(plot);
   }
   rows[index] = { ok: true, text: summarizeRowValue(compiled, value, env, isDefinition ? row : null) };
@@ -214,4 +219,8 @@ function unboundNames(ast: ReturnType<typeof parseExpression>, env: Env): string
 
 function makeGraphFunction(ast: ReturnType<typeof parseExpression>, env: Env, axis: string): (x: number) => RuntimeValue {
   return unboundNames(ast, env).includes(axis) ? makeUserFunction([axis], ast, env) : () => evaluate(ast, env);
+}
+
+function colorForRow(index: number, rowColors: string[]): string {
+  return rowColors[index] ?? colors[index % colors.length];
 }

@@ -116,26 +116,67 @@ function drawRegionGridPlot(ctx: CanvasRenderingContext2D, plot: Extract<Sampled
   ctx.save();
   ctx.globalAlpha = 0.18;
   ctx.fillStyle = plot.color;
-  for (const cell of plot.cells) {
-    const projected = projectPoint(state, width, height, cell);
-    const size = projectSize(state, cell.size);
-    ctx.fillRect(projected.x, projected.y, size, size);
-  }
+  drawRegionCellRuns(ctx, plot.cells, width, height, state);
   ctx.restore();
 
-  ctx.save();
-  ctx.strokeStyle = plot.color;
-  ctx.lineWidth = 2;
-  ctx.lineCap = "butt";
-  ctx.setLineDash(regionBoundaryDash(plot.boundaryStyle));
-  ctx.beginPath();
-  for (const segment of plot.boundarySegments) {
-    const from = projectPoint(state, width, height, segment.from);
-    const to = projectPoint(state, width, height, segment.to);
-    ctx.moveTo(from.x, from.y);
-    ctx.lineTo(to.x, to.y);
+  drawRegionGridBoundary(ctx, plot, width, height, state);
+}
+
+function drawRegionCellRuns(ctx: CanvasRenderingContext2D, cells: Extract<SampledPlot, { kind: "region-grid" }>["cells"], width: number, height: number, state: GraphViewState): void {
+  if (cells.length === 0) return;
+  let run = { x: cells[0].x, y: cells[0].y, width: cells[0].size, size: cells[0].size };
+
+  const flush = (): void => {
+    const topLeft = projectPoint(state, width, height, { x: run.x, y: run.y });
+    const bottomRight = projectPoint(state, width, height, { x: run.x + run.width, y: run.y + run.size });
+    ctx.fillRect(topLeft.x, topLeft.y, bottomRight.x - topLeft.x + 0.75, bottomRight.y - topLeft.y + 0.75);
+  };
+
+  for (const cell of cells.slice(1)) {
+    const continuesRun = cell.y === run.y && cell.size === run.size && Math.abs(cell.x - (run.x + run.width)) < 0.001;
+    if (continuesRun) {
+      run.width += cell.size;
+      continue;
+    }
+    flush();
+    run = { x: cell.x, y: cell.y, width: cell.size, size: cell.size };
   }
-  ctx.stroke();
+  flush();
+}
+
+function drawRegionGridBoundary(ctx: CanvasRenderingContext2D, plot: Extract<SampledPlot, { kind: "region-grid" }>, width: number, height: number, state: GraphViewState): void {
+  if (plot.boundaryStyle === "inclusive") {
+    ctx.save();
+    ctx.strokeStyle = plot.color;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    strokeScreenSegments(ctx, plot.boundarySegments.map((segment) => [
+      projectPoint(state, width, height, segment.from),
+      projectPoint(state, width, height, segment.to)
+    ]));
+    ctx.restore();
+    return;
+  }
+
+  if (plot.boundaryStyle === "mixed") {
+    ctx.save();
+    ctx.globalAlpha = 0.45;
+    ctx.strokeStyle = plot.color;
+    ctx.lineWidth = 1.25;
+    ctx.lineCap = "round";
+    strokeScreenSegments(ctx, plot.boundarySegments.map((segment) => [
+      projectPoint(state, width, height, segment.from),
+      projectPoint(state, width, height, segment.to)
+    ]));
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.fillStyle = plot.color;
+  drawBoundaryDots(ctx, plot.boundarySegments.map((segment) => ({
+    from: projectPoint(state, width, height, segment.from),
+    to: projectPoint(state, width, height, segment.to)
+  })));
   ctx.restore();
 }
 
@@ -183,20 +224,40 @@ function fillSmoothRegion(ctx: CanvasRenderingContext2D, points: ScreenPoint[], 
 }
 
 function strokeSegments(ctx: CanvasRenderingContext2D, segments: ScreenPoint[][], width: number, height: number, state: GraphViewState): void {
+  strokeScreenSegments(ctx, segments.map((points) => points.map((point) => projectPoint(state, width, height, point))));
+}
+
+function strokeScreenSegments(ctx: CanvasRenderingContext2D, segments: ScreenPoint[][]): void {
   ctx.beginPath();
   for (const points of segments) {
     let first = true;
     for (const point of points) {
-      const projected = projectPoint(state, width, height, point);
       if (first) {
-        ctx.moveTo(projected.x, projected.y);
+        ctx.moveTo(point.x, point.y);
         first = false;
       } else {
-        ctx.lineTo(projected.x, projected.y);
+        ctx.lineTo(point.x, point.y);
       }
     }
   }
   ctx.stroke();
+}
+
+function drawBoundaryDots(ctx: CanvasRenderingContext2D, segments: { from: ScreenPoint; to: ScreenPoint }[]): void {
+  const spacing = 7;
+  const radius = 1.35;
+  for (const segment of segments) {
+    const length = screenDistance(segment.from, segment.to);
+    const count = Math.max(1, Math.floor(length / spacing));
+    for (let index = 0; index <= count; index++) {
+      const t = count === 0 ? 0.5 : (index + 0.5) / (count + 1);
+      const x = segment.from.x + (segment.to.x - segment.from.x) * t;
+      const y = segment.from.y + (segment.to.y - segment.from.y) * t;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
 }
 
 function projectPoint(state: GraphViewState, width: number, height: number, point: ScreenPoint): ScreenPoint {
@@ -234,6 +295,10 @@ function viewportWorldToScreen(target: Pick<GraphViewport, "cx" | "cy" | "scale"
     x: target.width / 2 + (point.x - target.cx) * target.scale,
     y: target.height / 2 - (point.y - target.cy) * target.scale
   };
+}
+
+function screenDistance(a: ScreenPoint, b: ScreenPoint): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function line(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number): void {
