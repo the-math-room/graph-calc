@@ -1,4 +1,4 @@
-import { Env, RuntimeFunction, RuntimeValue, evaluate, freeNames, parseExpression } from "./language.js";
+import { Env, RuntimeFunction, RuntimeValue, evaluate, freeNames, parseExpression } from "../core/language.js";
 import { CaseDefinitionRow, DefinitionRow } from "./workspace-compiled.js";
 import { formatValue } from "./workspace-values.js";
 

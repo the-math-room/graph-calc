@@ -1,5 +1,5 @@
-import { RuntimeValue, clamp } from "./language.js";
-import { Plot, formatNumber } from "./workspace.js";
+import { RuntimeValue, clamp } from "../core/language.js";
+import { Plot, formatNumber } from "../workspace/workspace.js";
 
 type Point = { x: number; y: number };
 type View = { cx: number; cy: number; scale: number };

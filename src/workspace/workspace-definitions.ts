@@ -1,4 +1,4 @@
-import { Env, RuntimeValue, evaluate, freeNames } from "./language.js";
+import { Env, RuntimeValue, evaluate, freeNames } from "../core/language.js";
 import {
   caseDefinitionFreeNames,
   definitionToCase,

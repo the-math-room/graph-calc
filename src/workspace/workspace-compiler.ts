@@ -1,4 +1,4 @@
-import { parseExpression } from "./language.js";
+import { parseExpression } from "../core/language.js";
 import { CompiledRow, DefinitionRow } from "./workspace-compiled.js";
 import { desugarDerivativeExpressions } from "./workspace-derivatives.js";
 import { RowResult } from "./workspace-values.js";

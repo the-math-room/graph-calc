@@ -1,4 +1,4 @@
-import { createBaseEnv } from "./language.js";
+import { createBaseEnv } from "../core/language.js";
 import { compileWorkspaceRows, fillParseErrors } from "./workspace-compiler.js";
 import { resolveDefinitions } from "./workspace-definitions.js";
 import { normalizeRow, parametricPromptFor } from "./workspace-normalize.js";

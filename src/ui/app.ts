@@ -1,10 +1,10 @@
 import "mathlive";
 import "mathlive/fonts.css";
 import type { MathfieldElement } from "mathlive";
-import { clamp } from "./language.js";
+import { clamp } from "../core/language.js";
 import { createGraphView } from "./graph-view.js";
-import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "./math-syntax.js";
-import { WorkspaceProgram, colors, compileWorkspace, examples, parametricPromptFor } from "./workspace.js";
+import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "../syntax/math-syntax.js";
+import { WorkspaceProgram, colors, compileWorkspace, examples, parametricPromptFor } from "../workspace/workspace.js";
 
 type ExpressionMode = "pretty" | "text";
 type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };

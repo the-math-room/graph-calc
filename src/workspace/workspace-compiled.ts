@@ -1,4 +1,4 @@
-import { parseExpression } from "./language.js";
+import { parseExpression } from "../core/language.js";
 import { NormalizedRow } from "./workspace-normalize.js";
 
 export type CompiledRow = {

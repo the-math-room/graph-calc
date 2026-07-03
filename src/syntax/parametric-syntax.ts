@@ -1,4 +1,4 @@
-import { isIdentifier, splitTopLevelComma } from "./source-structure.js";
+import { isIdentifier, splitTopLevelComma } from "../core/source-structure.js";
 
 export type CoordinatePair = { x: string; y: string };
 export type ParametricRange = { variable: string; lo: string; hi: string };

@@ -1,5 +1,5 @@
 import { parseCoordinatePair, parseParametricRangeExpression, parseParametricSource } from "./parametric-syntax.js";
-import { findMatchingBrace, findMatchingOpenParen, findMatchingParen, isIdentifierChar, skipWhitespace, splitTopLevelComma } from "./source-structure.js";
+import { findMatchingBrace, findMatchingOpenParen, findMatchingParen, isIdentifierChar, skipWhitespace, splitTopLevelComma } from "../core/source-structure.js";
 
 export const mathFunctionNames = ["sin", "cos", "tan", "asin", "acos", "atan", "sqrt", "abs", "log", "exp", "floor", "ceil", "round", "min", "max", "pow"] as const;
 const protectedLeftBrace = "\uE000";

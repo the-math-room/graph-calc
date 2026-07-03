@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
-import { latexToSource } from "./math-syntax.js";
+import { latexToSource } from "../syntax/math-syntax.js";
 import { compileWorkspace, normalizeRow, parametricPromptFor } from "./workspace.js";
 
 test("normalizes workspace row sugar before compilation", () => {

@@ -1,5 +1,5 @@
-import { findTrailingRestrictionStart, parseCoordinatePair, parseParametricSource } from "./parametric-syntax.js";
-import { findMatchingParen, isIdentifier, splitTopLevelComma } from "./source-structure.js";
+import { findMatchingParen, isIdentifier, splitTopLevelComma } from "../core/source-structure.js";
+import { findTrailingRestrictionStart, parseCoordinatePair, parseParametricSource } from "../syntax/parametric-syntax.js";
 
 export type Assignment = { name: string; expr: string };
 type TopLevelEquation = { left: string; right: string };

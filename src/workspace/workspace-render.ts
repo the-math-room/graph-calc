@@ -1,4 +1,4 @@
-import { Env, RuntimeValue, evaluate, freeNames, isRuntimeFunction, makeUserFunction, parseExpression } from "./language.js";
+import { Env, RuntimeValue, evaluate, freeNames, isRuntimeFunction, makeUserFunction, parseExpression } from "../core/language.js";
 import { CompiledRow } from "./workspace-compiled.js";
 import { NormalizedRow, isDefinitionRow } from "./workspace-normalize.js";
 import { Plot, RowResult, colors, formatValue, makePlot, summarizeValue } from "./workspace-values.js";

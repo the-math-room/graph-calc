@@ -1,5 +1,5 @@
-import { freeNames, parseExpression } from "./language.js";
-import { findMatchingParen, isIdentifierChar, skipWhitespace, splitTopLevelComma } from "./source-structure.js";
+import { freeNames, parseExpression } from "../core/language.js";
+import { findMatchingParen, isIdentifierChar, skipWhitespace, splitTopLevelComma } from "../core/source-structure.js";
 
 export function desugarDerivativeExpressions(source: string, params: string[]): string {
   let cursor = 0;

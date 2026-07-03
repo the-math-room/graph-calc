@@ -1,4 +1,4 @@
-import { ParametricCurve, RuntimeValue, isComplex, isParametricCurve, isRuntimeFunction } from "./language.js";
+import { ParametricCurve, RuntimeValue, isComplex, isParametricCurve, isRuntimeFunction } from "../core/language.js";
 import { NormalizedRow } from "./workspace-normalize.js";
 
 export type RowResult = { ok: boolean; text: string };
