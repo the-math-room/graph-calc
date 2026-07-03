@@ -125,6 +125,21 @@ test("binds identifiers in case arguments as application parameters", () => {
   assert.equal(program.plots[2].fn(4), 8);
 });
 
+test("mixes base cases with a general recursive case rule", () => {
+  const program = compileWorkspace(["a(0) = 1", "a(1) = 2", "a(n) = a(n-1) + a(n-2)", "a(5)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["a: fn/1", "a: fn/1", "a: fn/1", "13"]);
+  assert.equal(program.plots.length, 4);
+  assert.equal(program.plots[3].kind, "expression");
+  assert.equal(program.plots[3].fn(0), 13);
+});
+
+test("stops runaway recursive case evaluation", () => {
+  const program = compileWorkspace(["a(0) = 1", "a(1) = 2", "a(n) = a(n-1) + a(n-2)", "a(30)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, false]);
+  assert.equal(program.rows[3].text, "Evaluation limit exceeded");
+});
+
 test("uses scalar arity to read applied scalars as multiplication", () => {
   const program = compileWorkspace(["x = 3", "y = x(2)", "x(2)"]);
   assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true]);

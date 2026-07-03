@@ -21,6 +21,9 @@ type ResolvableDefinition =
   | { kind: "single"; name: string; definition: DefinitionRow }
   | { kind: "cases"; name: string; definitions: CaseDefinitionRow[] };
 
+type CaseEvaluationBudget = { remaining: number };
+const maxCaseEvaluations = 20_000;
+
 export function resolveDefinitions(definitions: DefinitionRow[], env: Env, rowErrors: Map<number, string>): void {
   const definitionsByName = groupDefinitionsByName(definitions);
   validateDefinitionGroups(definitionsByName, rowErrors);
@@ -75,15 +78,16 @@ function groupDefinitionsByName(definitions: DefinitionRow[]): Map<string, Defin
 function validateDefinitionGroups(definitionsByName: Map<string, DefinitionRow[]>, rowErrors: Map<number, string>): void {
   for (const [name, candidates] of definitionsByName) {
     const caseDefinitions = candidates.filter(isCaseDefinitionRow);
-    const valueDefinitions = candidates.filter((definition) => definition.row.kind !== "case-binding");
-    if (caseDefinitions.length > 0 && valueDefinitions.length > 0) {
+    const scalarDefinitions = candidates.filter((definition) => definition.row.kind === "binding");
+    const functionDefinitions = candidates.filter((definition) => definition.row.kind === "function-binding");
+    if (caseDefinitions.length > 0 && scalarDefinitions.length > 0) {
       for (const definition of candidates) rowErrors.set(definition.index, `Mixed definition forms: ${name}`);
       continue;
     }
-    if (valueDefinitions.length > 1) {
-      for (const definition of valueDefinitions) rowErrors.set(definition.index, `Duplicate definition: ${name}`);
+    if (caseDefinitions.length === 0 && candidates.length > 1) {
+      for (const definition of candidates) rowErrors.set(definition.index, `Duplicate definition: ${name}`);
     }
-    reportDuplicateCases(name, caseDefinitions, rowErrors);
+    if (caseDefinitions.length > 0) reportDuplicateCases(name, [...caseDefinitions, ...functionDefinitions.map(functionDefinitionToCase)], rowErrors);
   }
 }
 
@@ -92,8 +96,8 @@ function collectValidDefinitions(definitionsByName: Map<string, DefinitionRow[]>
   for (const [name, candidates] of definitionsByName) {
     const validCandidates = candidates.filter((candidate) => !rowErrors.has(candidate.index));
     if (validCandidates.length === 0) continue;
-    if (validCandidates.every((candidate) => candidate.row.kind === "case-binding")) {
-      validDefinitions.set(name, { kind: "cases", name, definitions: validCandidates.filter(isCaseDefinitionRow) });
+    if (validCandidates.some((candidate) => candidate.row.kind === "case-binding")) {
+      validDefinitions.set(name, { kind: "cases", name, definitions: validCandidates.map(definitionToCase).filter(isPresentCaseDefinition) });
     } else if (validCandidates.length === 1) {
       validDefinitions.set(name, { kind: "single", name, definition: validCandidates[0] });
     }
@@ -103,6 +107,32 @@ function collectValidDefinitions(definitionsByName: Map<string, DefinitionRow[]>
 
 function isCaseDefinitionRow(definition: DefinitionRow): definition is CaseDefinitionRow {
   return definition.row.kind === "case-binding";
+}
+
+function isPresentCaseDefinition(definition: CaseDefinitionRow | null): definition is CaseDefinitionRow {
+  return definition !== null;
+}
+
+function definitionToCase(definition: DefinitionRow): CaseDefinitionRow | null {
+  if (isCaseDefinitionRow(definition)) return definition;
+  if (definition.row.kind === "function-binding") return functionDefinitionToCase(definition);
+  return null;
+}
+
+function functionDefinitionToCase(definition: DefinitionRow): CaseDefinitionRow {
+  if (definition.row.kind !== "function-binding") throw new Error("Expected a function definition");
+  return {
+    ...definition,
+    ast: parseExpression(definition.row.expr),
+    caseArgAsts: definition.row.params.map((param) => parseExpression(param)),
+    row: {
+      kind: "case-binding",
+      source: definition.row.source,
+      name: definition.row.name,
+      args: definition.row.params,
+      expr: definition.row.expr
+    }
+  };
 }
 
 function reportDuplicateCases(name: string, definitions: CaseDefinitionRow[], rowErrors: Map<number, string>): void {
@@ -144,11 +174,18 @@ function definitionFreeNames(definition: ResolvableDefinition): Set<string> {
 
 function evaluateDefinition(definition: ResolvableDefinition, env: Env): RuntimeValue {
   if (definition.kind === "single") return evaluate(definition.definition.ast, env);
-  return makeCaseFunction(definition.name, definition.definitions, env);
+  return makeCaseFunction(definition.name, definition.definitions, env, [], { remaining: maxCaseEvaluations });
 }
 
-function makeCaseFunction(name: string, definitions: CaseDefinitionRow[], env: Env, supplied: RuntimeValue[] = []): RuntimeValue {
+function makeCaseFunction(
+  name: string,
+  definitions: CaseDefinitionRow[],
+  env: Env,
+  supplied: RuntimeValue[] = [],
+  budget: CaseEvaluationBudget
+): RuntimeValue {
   const fn = ((...args: RuntimeValue[]): RuntimeValue => {
+    spendCaseEvaluation(budget);
     const values = [...supplied, ...args];
     for (const definition of definitions) {
       const local = matchCasePrefix(definition, values, env);
@@ -158,11 +195,16 @@ function makeCaseFunction(name: string, definitions: CaseDefinitionRow[], env: E
     }
 
     const hasPrefix = definitions.some((definition) => values.length < definition.row.args.length && matchCasePrefix(definition, values, env));
-    if (hasPrefix) return makeCaseFunction(name, definitions, env, values);
+    if (hasPrefix) return makeCaseFunction(name, definitions, env, values, budget);
     throw new Error(`No matching case: ${name}(${values.map(formatValue).join(", ")})`);
   }) as RuntimeFunction;
   fn.arity = 1;
   return fn;
+}
+
+function spendCaseEvaluation(budget: CaseEvaluationBudget): void {
+  budget.remaining--;
+  if (budget.remaining < 0) throw new Error("Evaluation limit exceeded");
 }
 
 function matchCasePrefix(definition: CaseDefinitionRow, values: RuntimeValue[], env: Env): Env | null {
