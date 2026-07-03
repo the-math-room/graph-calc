@@ -22,19 +22,26 @@ export function createGraphView(
   const ctx: CanvasRenderingContext2D = context;
   const state: GraphViewState & {
     dragging: boolean;
+    keyboardNavigating: boolean;
     lastDrag: Point | null;
     drawFrame: number;
+    keyboardFrame: number;
+    lastKeyboardFrameTime: number | null;
   } = {
     view: { cx: 0, cy: 0, scale: 64 },
     pointer: null,
     dragging: false,
+    keyboardNavigating: false,
     lastDrag: null,
     plots: [],
     sampledViewport: null,
-    drawFrame: 0
+    drawFrame: 0,
+    keyboardFrame: 0,
+    lastKeyboardFrameTime: null
   };
+  const activeKeys = new Set<GraphKey>();
 
-  const viewport = (): GraphViewport => viewportFor(canvas, state, state.dragging);
+  const viewport = (): GraphViewport => viewportFor(canvas, state, state.dragging || state.keyboardNavigating);
 
   const requestDraw = (): void => {
     if (state.drawFrame) return;
@@ -60,7 +67,62 @@ export function createGraphView(
     notifyViewportChanged();
   };
 
+  const startKeyboardNavigation = (): void => {
+    if (state.keyboardFrame) return;
+    state.keyboardNavigating = true;
+    state.lastKeyboardFrameTime = null;
+    state.keyboardFrame = window.requestAnimationFrame(stepKeyboardNavigation);
+  };
+
+  const stopKeyboardNavigation = (): void => {
+    activeKeys.clear();
+    if (state.keyboardFrame) {
+      window.cancelAnimationFrame(state.keyboardFrame);
+      state.keyboardFrame = 0;
+    }
+    if (state.keyboardNavigating) {
+      state.keyboardNavigating = false;
+      state.lastKeyboardFrameTime = null;
+      notifyViewportChanged();
+    }
+  };
+
+  const stepKeyboardNavigation = (time: number): void => {
+    if (activeKeys.size === 0) {
+      state.keyboardFrame = 0;
+      if (state.keyboardNavigating) {
+        state.keyboardNavigating = false;
+        state.lastKeyboardFrameTime = null;
+        notifyViewportChanged();
+      }
+      return;
+    }
+
+    const previousTime = state.lastKeyboardFrameTime ?? time;
+    const dt = Math.min(0.05, Math.max(0, (time - previousTime) / 1000));
+    state.lastKeyboardFrameTime = time;
+    applyKeyboardNavigation(dt);
+    notifyViewportChanged();
+    state.keyboardFrame = window.requestAnimationFrame(stepKeyboardNavigation);
+  };
+
+  const applyKeyboardNavigation = (dt: number): void => {
+    const panPixelsPerSecond = 520;
+    const pan = panPixelsPerSecond * dt / state.view.scale;
+    if (activeKeys.has("left")) state.view.cx -= pan;
+    if (activeKeys.has("right")) state.view.cx += pan;
+    if (activeKeys.has("up")) state.view.cy += pan;
+    if (activeKeys.has("down")) state.view.cy -= pan;
+
+    const zoomPerSecond = 3.1;
+    if (activeKeys.has("zoomIn")) state.view.scale = clamp(state.view.scale * Math.pow(zoomPerSecond, dt), 14, 420);
+    if (activeKeys.has("zoomOut")) state.view.scale = clamp(state.view.scale / Math.pow(zoomPerSecond, dt), 14, 420);
+  };
+
+  if (!canvas.hasAttribute("tabindex")) canvas.tabIndex = 0;
+
   canvas.addEventListener("pointerdown", (event) => {
+    canvas.focus();
     state.dragging = true;
     state.lastDrag = { x: event.clientX, y: event.clientY };
     canvas.setPointerCapture(event.pointerId);
@@ -100,6 +162,27 @@ export function createGraphView(
     zoomAt(event.deltaY < 0 ? 1.12 : 0.89, state.pointer);
   }, { passive: false });
 
+  window.addEventListener("keydown", (event) => {
+    if (isEditableTarget(event.target)) return;
+    const key = graphKeyFor(event);
+    if (!key) return;
+
+    event.preventDefault();
+    activeKeys.add(key);
+    startKeyboardNavigation();
+  });
+
+  window.addEventListener("keyup", (event) => {
+    const key = graphKeyFor(event);
+    if (!key) return;
+
+    event.preventDefault();
+    activeKeys.delete(key);
+    if (activeKeys.size === 0) stopKeyboardNavigation();
+  });
+
+  window.addEventListener("blur", stopKeyboardNavigation);
+
   return {
     draw(plots: SampledPlot[], sampledViewport: GraphViewport) {
       state.plots = plots;
@@ -118,4 +201,23 @@ export function createGraphView(
       zoomAt(factor);
     }
   };
+}
+
+type GraphKey = "left" | "right" | "up" | "down" | "zoomIn" | "zoomOut";
+
+function graphKeyFor(event: KeyboardEvent): GraphKey | null {
+  if (event.key === "ArrowLeft") return "left";
+  if (event.key === "ArrowRight") return "right";
+  if (event.key === "ArrowUp") return "up";
+  if (event.key === "ArrowDown") return "down";
+  if (event.key === "=" || event.key === "+" || event.code === "Equal" || event.code === "NumpadAdd") return "zoomIn";
+  if (event.key === "-" || event.code === "Minus" || event.code === "NumpadSubtract") return "zoomOut";
+  return null;
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  const tagName = target.tagName.toLowerCase();
+  return tagName === "input" || tagName === "textarea" || tagName === "select" || tagName === "math-field";
 }

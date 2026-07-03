@@ -364,6 +364,11 @@ code {
   cursor: crosshair;
 }
 
+#graph:focus-visible {
+  outline: 2px solid #4f8df7;
+  outline-offset: -2px;
+}
+
 .graph-toolbar {
   position: absolute;
   z-index: 2;
