@@ -21,8 +21,11 @@ Project structure:
 - `src/app.ts` owns browser event handling and canvas rendering.
 - `src/language.ts` owns the parser, evaluator, runtime environment, and functional standard library.
 - `src/math-syntax.ts` adapts between the visual math editor's LaTeX and the graph language syntax.
-- `src/workspace.ts` adapts expression rows into graphable plots and user-facing result text.
-- `src/language.test.ts` covers the functional language and workspace compilation behavior.
+- `src/workspace.ts` is the public workspace facade.
+- `src/workspace-compiler.ts` normalizes and parses rows into compiled workspace rows.
+- `src/workspace-definitions.ts` resolves immutable and case definitions into the workspace environment.
+- `src/workspace-render.ts` adapts compiled rows into graphable plots and user-facing result text.
+- `src/*.test.ts` files cover the boundary they are named after: language, math syntax, and workspace behavior.
 
 Design notes:
 
@@ -31,7 +34,7 @@ Design notes:
 Syntax sugar lives at explicit boundaries:
 
 - `src/language.ts` owns expression-level sugar such as implicit multiplication (`2x`, `2(x + 1)`).
-- `src/workspace.ts` owns row-level sugar such as treating `x`, `2x`, `y = 2x`, and `2x = y` as graph expressions, orienting `2 = t` as `t = 2`, and normalizing `f(x) = 2x` to `f = fn(x) => 2x`.
+- `src/workspace-normalize.ts` owns row-level sugar such as treating `x`, `2x`, `y = 2x`, and `2x = y` as graph expressions, orienting `2 = t` as `t = 2`, and normalizing `f(x) = 2x` to `f = fn(x) => 2x`.
 - `src/math-syntax.ts` owns visual-editor translation between MathLive LaTeX and the language source.
 
 Language examples:

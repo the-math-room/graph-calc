@@ -9,7 +9,7 @@ Design Principles
 -----------------
 
 - Keep the evaluator small and semantic. Add core constructs to `src/language.ts` only when they are true language features, not editor conveniences.
-- Put sugar at explicit boundaries. Visual notation belongs in `src/math-syntax.ts`; row-level graphing and assignment conventions belong in `src/workspace-normalize.ts` and `src/workspace.ts`; evaluation belongs in `src/language.ts`.
+- Put sugar at explicit boundaries. Visual notation belongs in `src/math-syntax.ts`; row-level graphing and assignment conventions belong in `src/workspace-normalize.ts`; workspace rendering belongs in `src/workspace-render.ts`; evaluation belongs in `src/language.ts`.
 - Prefer desugaring over parallel meanings. Subscripts desugar to function application, function definition sugar desugars to `fn`, and aggregate notation desugars to ordinary functions like `sum(fn(i) => ..., lo, hi)`.
 - Make equations symmetric when the target is clear. `t = 2` and `2 = t` are the same definition; `y = 2x` and `2x = y` are the same graph row.
 - Preserve graphing conventions only where they are graphing conventions. Multiple `y = ...` rows are allowed because graphing calculators do that; duplicate immutable definitions are errors.
