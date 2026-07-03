@@ -3,23 +3,19 @@ import "mathlive/fonts.css";
 import type { MathfieldElement } from "mathlive";
 import { clamp } from "../core/language.js";
 import { createGraphView } from "./graph-view.js";
-import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "../syntax/math-syntax.js";
+import { latexToSource, sourceToLatex } from "../syntax/math-syntax.js";
 import {
-  NormalizedRow,
   RowResult,
   WorkspaceFileV1,
-  colors,
   compileWorkspace,
   examples,
-  normalizeRow,
-  parametricPromptFor,
   readWorkspaceFile,
   workspaceFileSchema
 } from "../workspace/workspace.js";
 import { GraphViewport, SampledPlot, sampleWorkspacePlots } from "../workspace/workspace-sampling.js";
+import { ExpressionMode, ExpressionRow, focusExpression as focusExpressionInput, focusNewExpression, renderExpressionList } from "./expression-list.js";
+import { copyText, rowDiagnostics } from "./row-diagnostics.js";
 
-type ExpressionMode = "pretty" | "text";
-type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };
 type CurrentProgram = { rows: RowResult[]; plots: SampledPlot[]; viewport: GraphViewport };
 
 type AppState = {
@@ -262,7 +258,7 @@ function startSidebarResize(event: PointerEvent): void {
 
 function addExpression(source: string, mode: ExpressionMode = "pretty"): void {
   if (!source) {
-    listEl.querySelector<MathfieldElement>(".new-expression-row math-field")?.focus();
+    focusNewExpression(listEl);
     return;
   }
   state.expressions.push({ source, latex: sourceToLatex(source), mode });
@@ -277,31 +273,10 @@ function insertParametricTemplate(): void {
 }
 
 function renderExpressions(): void {
-  listEl.replaceChildren();
-  state.expressions.forEach((expression, index) => {
-    const card = document.createElement("article");
-    card.className = "expression-card";
-
-    const swatch = document.createElement("div");
-    swatch.className = "swatch";
-    swatch.style.background = colors[index % colors.length];
-
-    const body = document.createElement("div");
-    body.className = "expression-body";
-    const input = expression.mode === "text" ? renderTextExpressionInput(expression, index) : renderPrettyExpressionInput(expression, index);
-
-    const result = document.createElement("div");
-    result.className = "result";
-    result.dataset.resultFor = String(index);
-    const prompt = renderParametricPrompt(expression, index);
-
-    const modeToggle = document.createElement("button");
-    modeToggle.className = "row-tool-button";
-    modeToggle.type = "button";
-    modeToggle.textContent = expression.mode === "text" ? "∑" : "T";
-    modeToggle.title = expression.mode === "text" ? "Edit as pretty math" : "Edit as text";
-    modeToggle.setAttribute("aria-label", modeToggle.title);
-    modeToggle.addEventListener("click", () => {
+  renderExpressionList(listEl, state.expressions, {
+    onLatexChange: updateExpressionLatex,
+    onSourceChange: updateExpressionSource,
+    onModeToggle(index) {
       state.expressions[index] = {
         ...state.expressions[index],
         mode: state.expressions[index].mode === "text" ? "pretty" : "text"
@@ -309,159 +284,28 @@ function renderExpressions(): void {
       saveExpressions();
       renderExpressions();
       focusExpression(index);
-    });
-
-    const remove = document.createElement("button");
-    remove.className = "remove-button";
-    remove.type = "button";
-    remove.textContent = "x";
-    remove.title = "Remove";
-    remove.setAttribute("aria-label", "Remove expression");
-    remove.addEventListener("click", () => {
+    },
+    onRemove(index) {
       state.expressions.splice(index, 1);
       saveExpressions();
       renderExpressions();
       refreshWorkspace();
-    });
-
-    const diagnostics = document.createElement("button");
-    diagnostics.className = "row-tool-button diagnostic-button";
-    diagnostics.type = "button";
-    diagnostics.textContent = "D";
-    diagnostics.title = "Copy diagnostics";
-    diagnostics.setAttribute("aria-label", "Copy row diagnostics");
-    diagnostics.addEventListener("click", () => {
-      copyRowDiagnostics(index, diagnostics);
-    });
-
-    const actions = document.createElement("div");
-    actions.className = "row-actions";
-    actions.append(remove, modeToggle, diagnostics);
-
-    body.append(input, prompt, result);
-    card.append(swatch, body, actions);
-    listEl.append(card);
+    },
+    onParametricTemplate(index, template) {
+      state.expressions[index] = {
+        ...state.expressions[index],
+        source: template,
+        latex: sourceToLatex(template),
+        mode: "pretty"
+      };
+      saveExpressions();
+      renderExpressions();
+      refreshWorkspace();
+      focusExpression(index);
+    },
+    onCommitNew: commitNewExpression,
+    onDiagnostics: copyRowDiagnostics
   });
-  renderNewExpressionRow();
-}
-
-function renderPrettyExpressionInput(expression: ExpressionRow, index: number): MathfieldElement {
-  const input = document.createElement("math-field") as MathfieldElement;
-  input.className = "expression-input";
-  input.setAttribute("aria-label", "Expression");
-  input.dataset.expressionIndex = String(index);
-  input.value = expression.latex;
-  configureMathfield(input);
-  input.addEventListener("input", () => {
-    updateExpressionLatex(index, input.getValue("latex-unstyled"));
-  });
-  input.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    if (escapeInputCommandToText(input, index)) event.preventDefault();
-  });
-  return input;
-}
-
-function renderTextExpressionInput(expression: ExpressionRow, index: number): HTMLTextAreaElement {
-  const input = document.createElement("textarea");
-  input.className = "expression-input text-expression-input";
-  input.setAttribute("aria-label", "Expression text");
-  input.dataset.expressionIndex = String(index);
-  input.rows = 1;
-  input.value = expression.source;
-  input.addEventListener("input", () => {
-    updateExpressionSource(index, input.value);
-  });
-  return input;
-}
-
-function renderParametricPrompt(expression: ExpressionRow, index: number): HTMLElement {
-  const prompt = document.createElement("div");
-  prompt.className = "parametric-prompt";
-  renderLiveParametricPrompt(prompt, expression.source, (template) => {
-    state.expressions[index] = {
-      ...state.expressions[index],
-      source: template,
-      latex: sourceToLatex(template),
-      mode: "pretty"
-    };
-    saveExpressions();
-    renderExpressions();
-    refreshWorkspace();
-    focusExpression(index);
-  });
-  return prompt;
-}
-
-function renderLiveParametricPrompt(prompt: HTMLElement, source: string, accept: (template: string) => void): void {
-  prompt.replaceChildren();
-  const suggestion = parametricPromptFor(source);
-  if (!suggestion) {
-    prompt.hidden = true;
-    return;
-  }
-
-  prompt.hidden = false;
-  const button = document.createElement("button");
-  button.type = "button";
-  button.className = "parametric-prompt-button";
-  button.textContent = `Add ${suggestion.variable} range`;
-  button.title = "Add parameter bounds";
-  button.setAttribute("aria-label", `Add ${suggestion.variable} range to this parametric curve`);
-  button.addEventListener("click", () => accept(suggestion.template));
-
-  const preview = document.createElement("code");
-  preview.textContent = `{0 <= ${suggestion.variable} <= 2*pi}`;
-  prompt.append(button, preview);
-}
-
-function renderNewExpressionRow(): void {
-  const card = document.createElement("article");
-  card.className = "expression-card new-expression-row";
-
-  const swatch = document.createElement("div");
-  swatch.className = "swatch";
-
-  const body = document.createElement("div");
-  body.className = "expression-body";
-  const input = document.createElement("math-field") as MathfieldElement;
-  input.className = "expression-input";
-  input.setAttribute("aria-label", "New expression");
-  configureMathfield(input);
-
-  const result = document.createElement("div");
-  result.className = "result";
-  const prompt = document.createElement("div");
-  prompt.className = "parametric-prompt";
-  prompt.hidden = true;
-  let committingPrompt = false;
-
-  const commit = (): void => {
-    if (committingPrompt) return;
-    const latex = input.getValue("latex-unstyled");
-    const source = latexToSource(latex);
-    if (!source.trim()) return;
-    commitNewExpression(source, latex, "pretty");
-  };
-  input.addEventListener("input", () => {
-    renderLiveParametricPrompt(prompt, latexToSource(input.getValue("latex-unstyled")), (template) => {
-      committingPrompt = true;
-      commitNewExpression(template, sourceToLatex(template), "pretty");
-    });
-  });
-  input.addEventListener("keydown", (event) => {
-    if (event.key !== "Enter") return;
-    event.preventDefault();
-    commit();
-  });
-  input.addEventListener("blur", commit);
-
-  const spacer = document.createElement("div");
-  spacer.className = "row-actions-spacer";
-
-  body.append(input, prompt, result);
-  card.append(swatch, body, spacer);
-  listEl.append(card);
 }
 
 function commitNewExpression(source: string, latex: string, mode: ExpressionMode): void {
@@ -476,13 +320,7 @@ function commitNewExpression(source: string, latex: string, mode: ExpressionMode
 }
 
 function focusExpression(index: number): void {
-  listEl.querySelector<MathfieldElement | HTMLTextAreaElement>(`[data-expression-index="${index}"]`)?.focus();
-}
-
-function configureMathfield(input: MathfieldElement): void {
-  input.smartSuperscript = true;
-  input.smartFence = true;
-  input.mathVirtualKeyboardPolicy = "manual";
+  focusExpressionInput(listEl, index);
 }
 
 function updateExpressionLatex(index: number, latex: string): void {
@@ -495,18 +333,6 @@ function updateExpressionSource(index: number, source: string): void {
   state.expressions[index] = { ...state.expressions[index], source, latex: sourceToLatex(source) };
   saveExpressions();
   scheduleWorkspaceRefresh();
-}
-
-function escapeInputCommandToText(input: MathfieldElement, index: number): boolean {
-  const latex = input.getValue("latex-unstyled");
-  const cursorLatex = input.getValue(0, input.position, "latex-unstyled").length;
-  const escaped = escapeLatexCommandToText(latex, cursorLatex);
-  if (escaped === null) return false;
-
-  input.setValue(escaped.latex, { format: "latex" });
-  input.position = Math.min(input.lastOffset, Math.max(0, input.position - (cursorLatex - escaped.cursor)));
-  updateExpressionLatex(index, input.getValue("latex-unstyled"));
-  return true;
 }
 
 function updateResults(program: CurrentProgram): void {
@@ -537,7 +363,7 @@ function scheduleWorkspaceRefresh(delay = 80): void {
 
 async function copyRowDiagnostics(index: number, button: HTMLButtonElement): Promise<void> {
   const program = currentProgram ?? compileAndSampleWorkspace();
-  const text = rowDiagnostics(index, program);
+  const text = rowDiagnostics(index, state.expressions, program);
   const originalText = button.textContent ?? "D";
   const originalTitle = button.title;
 
@@ -564,78 +390,4 @@ function compileAndSampleWorkspace(): CurrentProgram {
     plots: sampleWorkspacePlots(program.plots, viewport),
     viewport
   };
-}
-
-function rowDiagnostics(index: number, program: CurrentProgram): string {
-  const expression = state.expressions[index];
-  const row = program.rows[index];
-  const normalized = expression ? normalizeRow(expression.source) : { kind: "empty" } satisfies NormalizedRow;
-  const plots = program.plots.filter((plot) => plot.rowIndex === index);
-
-  return [
-    `row: ${index + 1}`,
-    `mode: ${expression?.mode ?? "missing"}`,
-    `latex: ${formatDiagnosticValue(expression?.latex ?? "")}`,
-    `source: ${formatDiagnosticValue(expression?.source ?? "")}`,
-    `normalized: ${formatNormalizedRow(normalized)}`,
-    `result: ${row ? `${row.ok ? "ok" : "error"}: ${row.text}` : "missing"}`,
-    `plots: ${plots.length === 0 ? "none" : ""}`,
-    ...plots.map((plot) => `- ${formatPlotDiagnostic(plot)}`)
-  ].filter((line) => line !== "plots: ").join("\n");
-}
-
-function formatDiagnosticValue(value: string): string {
-  return JSON.stringify(value);
-}
-
-function formatNormalizedRow(row: NormalizedRow): string {
-  switch (row.kind) {
-    case "empty":
-      return "empty";
-    case "binding":
-      return `binding name=${row.name} expr=${formatDiagnosticValue(row.expr)}`;
-    case "function-binding":
-      return `function-binding name=${row.name} params=(${row.params.join(", ")}) expr=${formatDiagnosticValue(row.expr)}`;
-    case "case-binding":
-      return `case-binding name=${row.name} args=(${row.args.join(", ")}) expr=${formatDiagnosticValue(row.expr)}`;
-    case "graph":
-      return `graph expr=${formatDiagnosticValue(row.expr)}`;
-    case "expression":
-      return `expression expr=${formatDiagnosticValue(row.expr)}`;
-  }
-}
-
-function formatPlotDiagnostic(plot: SampledPlot): string {
-  const base = `${plot.kind} label=${formatDiagnosticValue(plot.label)}`;
-  if (plot.kind === "region-grid") {
-    return `${base} boundaryStyle=${plot.boundaryStyle} cells=${plot.cells.length}`;
-  }
-  if (plot.kind === "smooth-region") {
-    return `${base} boundaryStyle=${plot.boundaryStyle} points=${plot.points.length}`;
-  }
-  if (plot.kind === "points") return `${base} count=${plot.points.length}`;
-  if (plot.kind === "polyline") return `${base} segments=${plot.segments.length}`;
-  return base;
-}
-
-async function copyText(text: string): Promise<void> {
-  if (navigator.clipboard) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return;
-    } catch {
-      // Fall through to the textarea copy path.
-    }
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = text;
-  textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  textarea.setAttribute("readonly", "true");
-  document.body.append(textarea);
-  textarea.select();
-  const copied = document.execCommand("copy");
-  textarea.remove();
-  if (!copied) throw new Error("Could not copy diagnostics");
 }
