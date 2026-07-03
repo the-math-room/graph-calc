@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lambda Graph</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <aside class="sidebar" aria-label="Expressions">
+        <header class="brand">
+          <div>
+            <h1>Lambda Graph</h1>
+            <p>Functional graphing workspace</p>
+          </div>
+          <button id="add-expression" class="icon-button" type="button" aria-label="Add expression" title="Add expression">
+            +
+          </button>
+        </header>
+        <section id="expression-list" class="expression-list" aria-label="Expression list"></section>
+        <footer class="reference">
+          <div class="reference-row">
+            <span>Core</span>
+            <code>let</code><code>fn</code><code>if</code><code>map</code><code>fold</code>
+          </div>
+          <div class="reference-row">
+            <span>Plot</span>
+            <code>x</code><code>range</code><code>zipWith</code><code>[x,y]</code>
+          </div>
+        </footer>
+      </aside>
+
+      <section class="graph-panel">
+        <div class="graph-toolbar" aria-label="Graph controls">
+          <button id="zoom-in" class="tool-button" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+          <button id="zoom-out" class="tool-button" type="button" title="Zoom out" aria-label="Zoom out">-</button>
+          <button id="reset-view" class="tool-button" type="button" title="Reset view" aria-label="Reset view">⌂</button>
+          <output id="cursor-readout" class="cursor-readout" aria-live="polite"></output>
+        </div>
+        <canvas id="graph" aria-label="Graph canvas"></canvas>
+      </section>
+    </main>
+
+    <script type="module" src="dist/app.js"></script>
+  </body>
+</html>

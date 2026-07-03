@@ -1,0 +1,16 @@
+{
+  "name": "lambda-graph",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "dev": "tsc --watch",
+    "test": "npm run build && node --test dist/language.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^5.5.0"
+  }
+}
