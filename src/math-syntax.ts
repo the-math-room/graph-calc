@@ -3,7 +3,6 @@ export const mathFunctionNames = ["sin", "cos", "tan", "asin", "acos", "atan", "
 export function sourceToLatex(source: string): string {
   let latex = source.trim();
   latex = restoreLatexFractions(latex);
-  latex = sourceCallsToSubscripts(latex);
   latex = latex.replace(/\*/g, "\\cdot ");
   latex = latex.replace(/\bpi\b/g, "\\pi ");
   for (const name of mathFunctionNames) {
@@ -88,34 +87,6 @@ function lowerLatexSubscripts(source: string): string {
   return source;
 }
 
-function sourceCallsToSubscripts(source: string): string {
-  let changed: boolean;
-  do {
-    changed = false;
-    let index = source.lastIndexOf("(");
-    while (index !== -1) {
-      const baseStart = findSourceCallBaseStart(source, index);
-      const argEnd = findMatchingParen(source, index);
-      if (baseStart === -1 || argEnd === -1) {
-        index = source.lastIndexOf("(", index - 1);
-        continue;
-      }
-
-      const arg = source.slice(index + 1, argEnd);
-      const base = source.slice(baseStart, index);
-      if (mathFunctionNames.some((name) => base === name) || isIdentifier(arg.trim())) {
-        index = source.lastIndexOf("(", index - 1);
-        continue;
-      }
-
-      source = `${source.slice(0, baseStart)}${base}_{${arg}}${source.slice(argEnd + 1)}`;
-      changed = true;
-      index = source.lastIndexOf("(", baseStart - 1);
-    }
-  } while (changed);
-  return source;
-}
-
 function findSubscriptBaseStart(source: string, underscoreIndex: number): number {
   const end = underscoreIndex - 1;
   if (end < 0) return -1;
@@ -139,16 +110,6 @@ function findCallExpressionStart(source: string, closeParen: number): number {
   return start;
 }
 
-function findSourceCallBaseStart(source: string, openParen: number): number {
-  const end = openParen - 1;
-  if (end < 0) return -1;
-  if (source[end] === ")") return findCallExpressionStart(source, end);
-  if (!isIdentifierChar(source[end])) return -1;
-  let start = end;
-  while (start > 0 && isIdentifierChar(source[start - 1])) start--;
-  return start;
-}
-
 function findMatchingParen(source: string, start: number): number {
   let depth = 0;
   for (let index = start; index < source.length; index++) {
@@ -167,10 +128,6 @@ function findMatchingOpenParen(source: string, end: number): number {
     if (depth === 0) return index;
   }
   return -1;
-}
-
-function isIdentifier(source: string): boolean {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(source);
 }
 
 function isIdentifierChar(char: string | undefined): boolean {

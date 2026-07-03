@@ -7,9 +7,10 @@ import { Plot, WorkspaceProgram, colors, compileWorkspace, examples, formatNumbe
 
 type Point = { x: number; y: number };
 type View = { cx: number; cy: number; scale: number };
+type ExpressionRow = { source: string; latex: string };
 
 type AppState = {
-  expressions: string[];
+  expressions: ExpressionRow[];
   expressionSizeScale: number;
   view: View;
   pointer: Point | null;
@@ -97,14 +98,32 @@ function requireElement<T extends Element>(selector: string): T {
   return element as T;
 }
 
-function loadExpressions(): string[] {
+function loadExpressions(): ExpressionRow[] {
   try {
     const stored: unknown = JSON.parse(localStorage.getItem("lambda-graph-expressions") || "null");
-    if (Array.isArray(stored) && stored.every((item) => typeof item === "string")) return stored;
+    if (Array.isArray(stored)) {
+      const rows = stored.map(readStoredExpression).filter((row) => row !== null);
+      if (rows.length === stored.length) return rows;
+    }
   } catch {
-    return examples.slice();
+    return exampleRows();
   }
-  return examples.slice();
+  return exampleRows();
+}
+
+function readStoredExpression(value: unknown): ExpressionRow | null {
+  if (typeof value === "string") return { source: value, latex: sourceToLatex(value) };
+  if (!value || typeof value !== "object") return null;
+  const row = value as Partial<ExpressionRow>;
+  if (typeof row.source !== "string") return null;
+  return {
+    source: row.source,
+    latex: typeof row.latex === "string" ? row.latex : sourceToLatex(row.source)
+  };
+}
+
+function exampleRows(): ExpressionRow[] {
+  return examples.map((source) => ({ source, latex: sourceToLatex(source) }));
 }
 
 function loadExpressionSizeScale(): number {
@@ -143,7 +162,7 @@ function addExpression(source: string): void {
     listEl.querySelector<MathfieldElement>(".new-expression-row math-field")?.focus();
     return;
   }
-  state.expressions.push(source);
+  state.expressions.push({ source, latex: sourceToLatex(source) });
   saveExpressions();
   renderExpressions();
   draw();
@@ -152,7 +171,7 @@ function addExpression(source: string): void {
 
 function renderExpressions(): void {
   listEl.replaceChildren();
-  state.expressions.forEach((source, index) => {
+  state.expressions.forEach((expression, index) => {
     const card = document.createElement("article");
     card.className = "expression-card";
 
@@ -165,12 +184,13 @@ function renderExpressions(): void {
     input.className = "expression-input";
     input.setAttribute("aria-label", "Expression");
     input.dataset.expressionIndex = String(index);
-    input.value = sourceToLatex(source);
+    input.value = expression.latex;
     input.smartSuperscript = true;
     input.smartFence = true;
     input.mathVirtualKeyboardPolicy = "manual";
     input.addEventListener("input", () => {
-      state.expressions[index] = latexToSource(input.getValue("latex-unstyled"));
+      const latex = input.getValue("latex-unstyled");
+      state.expressions[index] = { source: latexToSource(latex), latex };
       saveExpressions();
       draw();
     });
@@ -214,10 +234,11 @@ function renderNewExpressionRow(): void {
   input.smartFence = true;
   input.mathVirtualKeyboardPolicy = "manual";
   input.addEventListener("input", () => {
-    const source = latexToSource(input.getValue("latex-unstyled"));
+    const latex = input.getValue("latex-unstyled");
+    const source = latexToSource(latex);
     if (!source.trim()) return;
     const index = state.expressions.length;
-    state.expressions.push(source);
+    state.expressions.push({ source, latex });
     saveExpressions();
     renderExpressions();
     draw();
@@ -263,7 +284,7 @@ function draw(): void {
   ctx.clearRect(0, 0, rect.width, rect.height);
   drawGrid(rect.width, rect.height);
 
-  const program = compileWorkspace(state.expressions);
+  const program = compileWorkspace(state.expressions.map((expression) => expression.source));
   updateResults(program);
   program.plots.forEach((plot) => drawPlot(plot, rect.width, rect.height));
   if (state.pointer) {

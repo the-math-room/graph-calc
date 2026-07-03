@@ -16,6 +16,7 @@ test("supports implicit multiplication in expression positions", () => {
   assert.equal(evaluateExpression("2pi"), 2 * Math.PI);
   assert.equal(evaluateExpression("2(3 + 4)"), 14);
   assert.equal(evaluateExpression("(2 + 3)(4 + 1)"), 25);
+  assert.equal(evaluateExpression("let x = 3 in x(2)"), 6);
 });
 
 test("tracks free names with lexical scope", () => {
@@ -28,6 +29,7 @@ test("converts common math editor latex into source syntax", () => {
   assert.equal(latexToSource("x^{2}"), "x^2");
   assert.equal(latexToSource("x_{1}"), "x(1)");
   assert.equal(latexToSource("x_1_2"), "x(1)(2)");
+  assert.equal(latexToSource("x_1_h"), "x(1)(h)");
   assert.equal(latexToSource("x_{n-1}"), "x(n-1)");
   assert.equal(latexToSource("y=2x"), "y=2x");
   assert.equal(latexToSource("\\sin(x)+\\pi"), "sin(x)+pi");
@@ -40,8 +42,8 @@ test("converts common math editor latex into source syntax", () => {
 
 test("converts source syntax into latex for math editing", () => {
   assert.equal(sourceToLatex("x^2"), "x^2");
-  assert.equal(sourceToLatex("x(1)"), "x_{1}");
-  assert.equal(sourceToLatex("x(1)(2)"), "x_{1}_{2}");
+  assert.equal(sourceToLatex("x(1)"), "x(1)");
+  assert.equal(sourceToLatex("x(1)(2)"), "x(1)(2)");
   assert.equal(sourceToLatex("sin(1)"), "\\sin(1)");
   assert.equal(sourceToLatex("sin(x) + pi"), "\\sin(x) + \\pi ");
   assert.equal(sourceToLatex("2*x"), "2\\cdot x");
@@ -109,6 +111,29 @@ test("compiles subscript-style case definitions as function cases", () => {
   assert.equal(program.plots[3].fn(0), 3);
   assert.equal(program.plots[5].kind, "expression");
   assert.equal(program.plots[5].fn(0), 12);
+});
+
+test("binds identifiers in case arguments as application parameters", () => {
+  const program = compileWorkspace(["x(1)(h) = 2*h", "x(1)(3)", "x(1)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["x: fn/1", "6", "fn/1"]);
+  assert.equal(program.plots.length, 3);
+  assert.equal(program.plots[0].kind, "function");
+  assert.equal(program.plots[1].kind, "expression");
+  assert.equal(program.plots[1].fn(0), 6);
+  assert.equal(program.plots[2].kind, "function");
+  assert.equal(program.plots[2].fn(4), 8);
+});
+
+test("uses scalar arity to read applied scalars as multiplication", () => {
+  const program = compileWorkspace(["x = 3", "y = x(2)", "x(2)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["x: 3", "y = x(2)", "6"]);
+  assert.equal(program.plots.length, 2);
+  assert.equal(program.plots[0].kind, "expression");
+  assert.equal(program.plots[0].fn(0), 6);
+  assert.equal(program.plots[1].kind, "expression");
+  assert.equal(program.plots[1].fn(0), 6);
 });
 
 test("reports duplicate case definitions separately from duplicate values", () => {

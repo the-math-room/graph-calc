@@ -90,8 +90,9 @@ export function evaluate(ast: Ast, env: Env): RuntimeValue {
     case "fn":
       return makeUserFunction(ast.params, ast.body, env);
     case "call": {
-      const fn = ensureFunction(evaluate(ast.callee, env));
-      return fn(...ast.args.map((arg) => evaluate(arg, env)));
+      const callee = evaluate(ast.callee, env);
+      const args = ast.args.map((arg) => evaluate(arg, env));
+      return applyCall(callee, args);
     }
   }
 }
@@ -416,6 +417,12 @@ function wrapFunction(fn: (...args: RuntimeValue[]) => RuntimeValue, arity: numb
 function ensureFunction(value: RuntimeValue): RuntimeFunction {
   if (!isRuntimeFunction(value)) throw new Error("Expected a function");
   return value;
+}
+
+function applyCall(callee: RuntimeValue, args: RuntimeValue[]): RuntimeValue {
+  if (isRuntimeFunction(callee)) return callee(...args);
+  if (typeof callee === "number" && args.length === 1) return callee * asNumber(args[0]);
+  throw new Error("Expected a function");
 }
 
 function asNumber(value: RuntimeValue): number {
