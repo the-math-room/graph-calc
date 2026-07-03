@@ -294,7 +294,7 @@ class Parser {
 
   private parseCall(): Ast {
     let expr = this.parsePrimary();
-    while (expr.type === "name" && this.peek().type === "(") {
+    while ((expr.type === "name" || expr.type === "call") && this.peek().type === "(") {
       this.take("(");
       const args: Ast[] = [];
       if (this.peek().type !== ")") {

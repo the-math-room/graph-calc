@@ -3,6 +3,7 @@ export const mathFunctionNames = ["sin", "cos", "tan", "asin", "acos", "atan", "
 export function sourceToLatex(source: string): string {
   let latex = source.trim();
   latex = restoreLatexFractions(latex);
+  latex = sourceCallsToSubscripts(latex);
   latex = latex.replace(/\*/g, "\\cdot ");
   latex = latex.replace(/\bpi\b/g, "\\pi ");
   for (const name of mathFunctionNames) {
@@ -22,8 +23,10 @@ function restoreLatexFractions(source: string): string {
 
 export function latexToSource(latex: string): string {
   let source = latex.trim();
+  source = stripDisplayMathDelimiters(source);
   source = stripLatexCommand(source, "left");
   source = stripLatexCommand(source, "right");
+  source = stripEmptyScripts(source);
   source = source.replace(/\\(?:,|;|:|!| )/g, "");
   source = source.replace(/\\(?:cdot|times)\s*/g, "*");
   source = source.replace(/\\pi\b/g, "pi");
@@ -31,9 +34,21 @@ export function latexToSource(latex: string): string {
   source = replaceLatexSqrt(source);
   source = normalizeLatexFunctions(source);
   source = normalizeLatexSuperscripts(source);
+  source = lowerLatexSubscripts(source);
   source = source.replace(/[{}]/g, "");
   source = source.replace(/\s+/g, " ").trim();
   return source;
+}
+
+function stripDisplayMathDelimiters(source: string): string {
+  if (source.startsWith("$$") && source.endsWith("$$")) return source.slice(2, -2).trim();
+  if (source.startsWith("\\[") && source.endsWith("\\]")) return source.slice(2, -2).trim();
+  if (source.startsWith("\\(") && source.endsWith("\\)")) return source.slice(2, -2).trim();
+  return source;
+}
+
+function stripEmptyScripts(source: string): string {
+  return source.replace(/[_^]\{\s*\}/g, "");
 }
 
 function stripLatexCommand(source: string, command: string): string {
@@ -54,6 +69,112 @@ function normalizeLatexSuperscripts(source: string): string {
     source = source.replace(/\^\{([^{}]+)\}/g, "^$1");
   } while (source !== previous);
   return source;
+}
+
+function lowerLatexSubscripts(source: string): string {
+  let index = source.indexOf("_");
+  while (index !== -1) {
+    const baseStart = findSubscriptBaseStart(source, index);
+    const arg = readLatexArgument(source, index + 1);
+    if (baseStart === -1 || !arg) {
+      index = source.indexOf("_", index + 1);
+      continue;
+    }
+
+    const base = source.slice(baseStart, index);
+    source = `${source.slice(0, baseStart)}${base}(${arg.value})${source.slice(arg.end)}`;
+    index = source.indexOf("_", baseStart + base.length + arg.value.length + 2);
+  }
+  return source;
+}
+
+function sourceCallsToSubscripts(source: string): string {
+  let changed: boolean;
+  do {
+    changed = false;
+    let index = source.lastIndexOf("(");
+    while (index !== -1) {
+      const baseStart = findSourceCallBaseStart(source, index);
+      const argEnd = findMatchingParen(source, index);
+      if (baseStart === -1 || argEnd === -1) {
+        index = source.lastIndexOf("(", index - 1);
+        continue;
+      }
+
+      const arg = source.slice(index + 1, argEnd);
+      const base = source.slice(baseStart, index);
+      if (mathFunctionNames.some((name) => base === name) || isIdentifier(arg.trim())) {
+        index = source.lastIndexOf("(", index - 1);
+        continue;
+      }
+
+      source = `${source.slice(0, baseStart)}${base}_{${arg}}${source.slice(argEnd + 1)}`;
+      changed = true;
+      index = source.lastIndexOf("(", baseStart - 1);
+    }
+  } while (changed);
+  return source;
+}
+
+function findSubscriptBaseStart(source: string, underscoreIndex: number): number {
+  const end = underscoreIndex - 1;
+  if (end < 0) return -1;
+  if (source[end] === ")") return findCallExpressionStart(source, end);
+  if (isIdentifierChar(source[end])) {
+    let start = end;
+    while (start > 0 && isIdentifierChar(source[start - 1])) start--;
+    return start;
+  }
+  return -1;
+}
+
+function findCallExpressionStart(source: string, closeParen: number): number {
+  const openParen = findMatchingOpenParen(source, closeParen);
+  if (openParen === -1) return -1;
+  let start = openParen - 1;
+  if (start < 0) return -1;
+  if (source[start] === ")") return findCallExpressionStart(source, start);
+  if (!isIdentifierChar(source[start])) return openParen;
+  while (start > 0 && isIdentifierChar(source[start - 1])) start--;
+  return start;
+}
+
+function findSourceCallBaseStart(source: string, openParen: number): number {
+  const end = openParen - 1;
+  if (end < 0) return -1;
+  if (source[end] === ")") return findCallExpressionStart(source, end);
+  if (!isIdentifierChar(source[end])) return -1;
+  let start = end;
+  while (start > 0 && isIdentifierChar(source[start - 1])) start--;
+  return start;
+}
+
+function findMatchingParen(source: string, start: number): number {
+  let depth = 0;
+  for (let index = start; index < source.length; index++) {
+    if (source[index] === "(") depth++;
+    if (source[index] === ")") depth--;
+    if (depth === 0) return index;
+  }
+  return -1;
+}
+
+function findMatchingOpenParen(source: string, end: number): number {
+  let depth = 0;
+  for (let index = end; index >= 0; index--) {
+    if (source[index] === ")") depth++;
+    if (source[index] === "(") depth--;
+    if (depth === 0) return index;
+  }
+  return -1;
+}
+
+function isIdentifier(source: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(source);
+}
+
+function isIdentifierChar(char: string | undefined): boolean {
+  return Boolean(char && /[A-Za-z0-9_]/.test(char));
 }
 
 function replaceLatexSqrt(source: string): string {

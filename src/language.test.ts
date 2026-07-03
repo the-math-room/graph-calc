@@ -26,16 +26,23 @@ test("tracks free names with lexical scope", () => {
 
 test("converts common math editor latex into source syntax", () => {
   assert.equal(latexToSource("x^{2}"), "x^2");
+  assert.equal(latexToSource("x_{1}"), "x(1)");
+  assert.equal(latexToSource("x_1_2"), "x(1)(2)");
+  assert.equal(latexToSource("x_{n-1}"), "x(n-1)");
   assert.equal(latexToSource("y=2x"), "y=2x");
   assert.equal(latexToSource("\\sin(x)+\\pi"), "sin(x)+pi");
   assert.equal(latexToSource("\\frac{x^{2}}{2}"), "((x^2)/(2))");
   assert.equal(latexToSource("v=\\frac43"), "v=((4)/(3))");
   assert.equal(latexToSource("\\sqrt{x+1}"), "sqrt(x+1)");
   assert.equal(latexToSource("\\sqrt x"), "sqrt(x)");
+  assert.equal(latexToSource("$$ a(n)_{}=a\\left(n-1\\right)+1 $$"), "a(n)=a(n-1)+1");
 });
 
 test("converts source syntax into latex for math editing", () => {
   assert.equal(sourceToLatex("x^2"), "x^2");
+  assert.equal(sourceToLatex("x(1)"), "x_{1}");
+  assert.equal(sourceToLatex("x(1)(2)"), "x_{1}_{2}");
+  assert.equal(sourceToLatex("sin(1)"), "\\sin(1)");
   assert.equal(sourceToLatex("sin(x) + pi"), "\\sin(x) + \\pi ");
   assert.equal(sourceToLatex("2*x"), "2\\cdot x");
   assert.equal(sourceToLatex("v=((4)/(3))*pi*r^3"), "v=\\frac{4}{3}\\cdot \\pi \\cdot r^3");
@@ -46,6 +53,9 @@ test("normalizes workspace row sugar before compilation", () => {
   assert.deepEqual(normalizeRow("f = fn(x) => x^2"), { kind: "binding", source: "f = fn(x) => x^2", name: "f", expr: "fn(x) => x^2" });
   assert.deepEqual(normalizeRow("2 = t"), { kind: "binding", source: "2 = t", name: "t", expr: "2" });
   assert.deepEqual(normalizeRow("f(x) = 2x"), { kind: "function-binding", source: "f(x) = 2x", name: "f", params: ["x"], expr: "2x" });
+  assert.deepEqual(normalizeRow("x(1) = 2"), { kind: "case-binding", source: "x(1) = 2", name: "x", args: ["1"], expr: "2" });
+  assert.deepEqual(normalizeRow("3 = x(2)"), { kind: "case-binding", source: "3 = x(2)", name: "x", args: ["2"], expr: "3" });
+  assert.deepEqual(normalizeRow("x(1)(2) = 12"), { kind: "case-binding", source: "x(1)(2) = 12", name: "x", args: ["1", "2"], expr: "12" });
   assert.deepEqual(normalizeRow("2x = f(x)"), { kind: "function-binding", source: "2x = f(x)", name: "f", params: ["x"], expr: "2x" });
   assert.deepEqual(normalizeRow("g(x) = 3*f(x)"), { kind: "function-binding", source: "g(x) = 3*f(x)", name: "g", params: ["x"], expr: "3*f(x)" });
   assert.deepEqual(normalizeRow("y = 2x"), { kind: "graph", source: "y = 2x", expr: "2x" });
@@ -86,6 +96,25 @@ test("compiles function definition sugar through lexical bindings", () => {
   assert.equal(program.plots[1].fn(4), 24);
   assert.equal(program.plots[2].kind, "function");
   assert.equal(program.plots[2].fn(5), 30);
+});
+
+test("compiles subscript-style case definitions as function cases", () => {
+  const program = compileWorkspace(["x(1) = 2", "3 = x(2)", "x(1)", "x(2)", "a(1)(2) = 12", "a(1)(2)"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["x: fn/1", "x: fn/1", "2", "3", "a: fn/1", "12"]);
+  assert.equal(program.plots.length, 6);
+  assert.equal(program.plots[2].kind, "expression");
+  assert.equal(program.plots[2].fn(0), 2);
+  assert.equal(program.plots[3].kind, "expression");
+  assert.equal(program.plots[3].fn(0), 3);
+  assert.equal(program.plots[5].kind, "expression");
+  assert.equal(program.plots[5].fn(0), 12);
+});
+
+test("reports duplicate case definitions separately from duplicate values", () => {
+  const program = compileWorkspace(["x(1) = 2", "x(1) = 3", "x(2) = 4"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [false, false, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["Duplicate case: x(1)", "Duplicate case: x(1)", "x: fn/1"]);
 });
 
 test("resolves immutable definitions by dependency order", () => {
@@ -160,6 +189,17 @@ test("uses explicit y rows to infer one workspace horizontal axis", () => {
   assert.equal(program.plots[1].fn(5), 10);
   assert.equal(program.plots[2].kind, "expression");
   assert.equal(program.plots[2].fn(100), 1);
+});
+
+test("explicit graph rows respect bound names instead of shadowing with the axis", () => {
+  const program = compileWorkspace(["x = 1", "y = x", "t = 2", "y = t"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["x: 1", "y = x", "t: 2", "y = t"]);
+  assert.equal(program.plots.length, 2);
+  assert.equal(program.plots[0].kind, "expression");
+  assert.equal(program.plots[0].fn(100), 1);
+  assert.equal(program.plots[1].kind, "expression");
+  assert.equal(program.plots[1].fn(100), 2);
 });
 
 test("reports conflicting explicit graph axis signals", () => {

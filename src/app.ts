@@ -10,6 +10,7 @@ type View = { cx: number; cy: number; scale: number };
 
 type AppState = {
   expressions: string[];
+  expressionSizeScale: number;
   view: View;
   pointer: Point | null;
   dragging: boolean;
@@ -18,6 +19,7 @@ type AppState = {
 
 const state: AppState = {
   expressions: loadExpressions(),
+  expressionSizeScale: loadExpressionSizeScale(),
   view: { cx: 0, cy: 0, scale: 64 },
   pointer: null,
   dragging: false,
@@ -30,8 +32,16 @@ if (!context) throw new Error("Canvas 2D context is unavailable");
 const ctx: CanvasRenderingContext2D = context;
 const listEl = requireElement<HTMLElement>("#expression-list");
 const readoutEl = requireElement<HTMLOutputElement>("#cursor-readout");
+const expressionSizeEl = requireElement<HTMLInputElement>("#expression-size");
 
 requireElement<HTMLButtonElement>("#add-expression").addEventListener("click", () => addExpression(""));
+expressionSizeEl.value = String(state.expressionSizeScale);
+applyExpressionSize();
+expressionSizeEl.addEventListener("input", () => {
+  state.expressionSizeScale = Number(expressionSizeEl.value);
+  localStorage.setItem("lambda-graph-expression-size-scale", String(state.expressionSizeScale));
+  applyExpressionSize();
+});
 requireElement<HTMLButtonElement>("#zoom-in").addEventListener("click", () => zoomAt(1.25));
 requireElement<HTMLButtonElement>("#zoom-out").addEventListener("click", () => zoomAt(0.8));
 requireElement<HTMLButtonElement>("#reset-view").addEventListener("click", () => {
@@ -97,16 +107,47 @@ function loadExpressions(): string[] {
   return examples.slice();
 }
 
+function loadExpressionSizeScale(): number {
+  const storedScale = Number(localStorage.getItem("lambda-graph-expression-size-scale") || "");
+  if (Number.isFinite(storedScale) && storedScale >= 0 && storedScale <= 100) return storedScale;
+
+  const legacySize = Number(localStorage.getItem("lambda-graph-expression-size") || "");
+  if (Number.isFinite(legacySize) && legacySize >= 18 && legacySize <= 30) return sizeToScale(legacySize);
+
+  return 42;
+}
+
+function applyExpressionSize(): void {
+  document.documentElement.style.setProperty("--expression-font-size", `${scaleToSize(state.expressionSizeScale).toFixed(2)}px`);
+}
+
+function scaleToSize(scale: number): number {
+  const min = 18;
+  const max = 34;
+  const t = clamp(scale, 0, 100) / 100;
+  return min * Math.pow(max / min, t);
+}
+
+function sizeToScale(size: number): number {
+  const min = 18;
+  const max = 34;
+  return clamp((Math.log(size / min) / Math.log(max / min)) * 100, 0, 100);
+}
+
 function saveExpressions(): void {
   localStorage.setItem("lambda-graph-expressions", JSON.stringify(state.expressions));
 }
 
 function addExpression(source: string): void {
+  if (!source) {
+    listEl.querySelector<MathfieldElement>(".new-expression-row math-field")?.focus();
+    return;
+  }
   state.expressions.push(source);
   saveExpressions();
   renderExpressions();
   draw();
-  listEl.querySelector<MathfieldElement>(".expression-card:last-child math-field")?.focus();
+  focusExpression(state.expressions.length - 1);
 }
 
 function renderExpressions(): void {
@@ -123,6 +164,7 @@ function renderExpressions(): void {
     const input = document.createElement("math-field") as MathfieldElement;
     input.className = "expression-input";
     input.setAttribute("aria-label", "Expression");
+    input.dataset.expressionIndex = String(index);
     input.value = sourceToLatex(source);
     input.smartSuperscript = true;
     input.smartFence = true;
@@ -154,6 +196,47 @@ function renderExpressions(): void {
     card.append(swatch, body, remove);
     listEl.append(card);
   });
+  renderNewExpressionRow();
+}
+
+function renderNewExpressionRow(): void {
+  const card = document.createElement("article");
+  card.className = "expression-card new-expression-row";
+
+  const swatch = document.createElement("div");
+  swatch.className = "swatch";
+
+  const body = document.createElement("div");
+  const input = document.createElement("math-field") as MathfieldElement;
+  input.className = "expression-input";
+  input.setAttribute("aria-label", "New expression");
+  input.smartSuperscript = true;
+  input.smartFence = true;
+  input.mathVirtualKeyboardPolicy = "manual";
+  input.addEventListener("input", () => {
+    const source = latexToSource(input.getValue("latex-unstyled"));
+    if (!source.trim()) return;
+    const index = state.expressions.length;
+    state.expressions.push(source);
+    saveExpressions();
+    renderExpressions();
+    draw();
+    focusExpression(index);
+  }, { once: true });
+
+  const result = document.createElement("div");
+  result.className = "result";
+
+  const spacer = document.createElement("div");
+  spacer.className = "remove-spacer";
+
+  body.append(input, result);
+  card.append(swatch, body, spacer);
+  listEl.append(card);
+}
+
+function focusExpression(index: number): void {
+  listEl.querySelector<MathfieldElement>(`math-field[data-expression-index="${index}"]`)?.focus();
 }
 
 function zoomAt(factor: number, point: Point | null = null): void {
