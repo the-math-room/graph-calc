@@ -1,3 +1,6 @@
+import { parseCoordinatePair, parseParametricRangeExpression, parseParametricSource } from "./parametric-syntax.js";
+import { findMatchingBrace, findMatchingOpenParen, findMatchingParen, isIdentifierChar, skipWhitespace, splitTopLevelComma } from "./source-structure.js";
+
 export const mathFunctionNames = ["sin", "cos", "tan", "asin", "acos", "atan", "sqrt", "abs", "log", "exp", "floor", "ceil", "round", "min", "max", "pow"] as const;
 const protectedLeftBrace = "\uE000";
 const protectedRightBrace = "\uE001";
@@ -22,16 +25,6 @@ function parametricSourceToLatex(source: string): string | null {
   return `\\begin{array}{c}(${sourceToLatex(parsed.x)},${sourceToLatex(parsed.y)})\\\\${sourceToLatex(parsed.lo)}\\le ${parsed.variable}\\le ${sourceToLatex(parsed.hi)}\\end{array}`;
 }
 
-function parseParametricSource(source: string): { x: string; y: string; variable: string; lo: string; hi: string } | null {
-  const restrictionStart = findTrailingRestrictionStart(source);
-  if (restrictionStart === -1) return null;
-
-  const point = parseCoordinatePair(source.slice(0, restrictionStart).trim());
-  const range = parseParametricRestriction(source.slice(restrictionStart).trim());
-  if (!point || !range) return null;
-  return { ...point, ...range };
-}
-
 function restoreLatexFractions(source: string): string {
   let previous: string;
   do {
@@ -39,94 +32,6 @@ function restoreLatexFractions(source: string): string {
     source = source.replace(/\(\(([^()]+)\)\/\(([^()]+)\)\)/g, "\\frac{$1}{$2}");
   } while (source !== previous);
   return source;
-}
-
-function findTrailingRestrictionStart(source: string): number {
-  let depth = 0;
-  for (let index = source.length - 1; index >= 0; index--) {
-    const ch = source[index];
-    if (ch === "}" || ch === ")" || ch === "]") depth++;
-    if (ch === "{" || ch === "(" || ch === "[") depth--;
-    if (ch === "{" && depth === 0) return index;
-  }
-  return -1;
-}
-
-function parseCoordinatePair(source: string): { x: string; y: string } | null {
-  if (!source.startsWith("(") || !source.endsWith(")")) return null;
-  const parts = splitTopLevelComma(source.slice(1, -1).trim());
-  if (parts.length !== 2 || !parts[0] || !parts[1]) return null;
-  return { x: parts[0], y: parts[1] };
-}
-
-function splitTopLevelComma(source: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let start = 0;
-  for (let index = 0; index < source.length; index++) {
-    const ch = source[index];
-    if (ch === "{" || ch === "(" || ch === "[") depth++;
-    if (ch === "}" || ch === ")" || ch === "]") depth--;
-    if (ch === "," && depth === 0) {
-      parts.push(source.slice(start, index).trim());
-      start = index + 1;
-    }
-  }
-  parts.push(source.slice(start).trim());
-  return parts;
-}
-
-function parseParametricRestriction(source: string): { variable: string; lo: string; hi: string } | null {
-  if (!source.startsWith("{") || !source.endsWith("}")) return null;
-  return parseParametricRange(source.slice(1, -1).trim());
-}
-
-function parseParametricRange(source: string): { variable: string; lo: string; hi: string } | null {
-  const match = splitChainedInequality(source);
-  if (!match) return null;
-  if (isLessThanComparison(match.leftOp) && isLessThanComparison(match.rightOp)) {
-    return { variable: match.variable, lo: match.leftExpr, hi: match.rightExpr };
-  }
-  if (isGreaterThanComparison(match.leftOp) && isGreaterThanComparison(match.rightOp)) {
-    return { variable: match.variable, lo: match.rightExpr, hi: match.leftExpr };
-  }
-  return null;
-}
-
-function splitChainedInequality(source: string): { leftExpr: string; leftOp: string; variable: string; rightOp: string; rightExpr: string } | null {
-  const first = findTopLevelComparison(source, 0);
-  if (!first) return null;
-  const second = findTopLevelComparison(source, first.end);
-  if (!second) return null;
-
-  const leftExpr = source.slice(0, first.start).trim();
-  const variable = source.slice(first.end, second.start).trim();
-  const rightExpr = source.slice(second.end).trim();
-  if (!leftExpr || !rightExpr || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(variable)) return null;
-  return { leftExpr, leftOp: first.op, variable, rightOp: second.op, rightExpr };
-}
-
-function findTopLevelComparison(source: string, start: number): { start: number; end: number; op: string } | null {
-  let depth = 0;
-  for (let index = start; index < source.length; index++) {
-    const ch = source[index];
-    if (ch === "(" || ch === "[") depth++;
-    if (ch === ")" || ch === "]") depth--;
-    if (depth !== 0) continue;
-
-    const two = source.slice(index, index + 2);
-    if (two === "<=" || two === ">=") return { start: index, end: index + 2, op: two };
-    if (ch === "<" || ch === ">") return { start: index, end: index + 1, op: ch };
-  }
-  return null;
-}
-
-function isLessThanComparison(op: string): boolean {
-  return op === "<" || op === "<=";
-}
-
-function isGreaterThanComparison(op: string): boolean {
-  return op === ">" || op === ">=";
 }
 
 export function latexToSource(latex: string): string {
@@ -174,7 +79,7 @@ function readLatexParametricArrayBody(body: string): string | null {
   if (rows.length !== 2) return null;
 
   const point = parseLatexCoordinatePair(rows[0]);
-  const range = parseParametricRange(latexToSource(rows[1]));
+  const range = parseParametricRangeExpression(latexToSource(rows[1]));
   if (!point || !range) return null;
   return `${point} ${protectedLeftBrace}${range.lo} <= ${range.variable} <= ${range.hi}${protectedRightBrace}`;
 }
@@ -273,6 +178,8 @@ function normalizeLatexSuperscripts(source: string): string {
 }
 
 function normalizeSymbolAdjacency(source: string): string {
+  // MathLive can emit adjacent constants from visual products, e.g. i\pi -> ipi.
+  // Keep this narrow until the core language has a full implicit-product pass for identifiers.
   source = source.replace(/\bipi\b/g, "i*pi");
   source = source.replace(/\bpie\b/g, "pi*e");
   source = source.replace(/\bepi\b/g, "e*pi");
@@ -540,30 +447,6 @@ function findCallExpressionStart(source: string, closeParen: number): number {
   return start;
 }
 
-function findMatchingParen(source: string, start: number): number {
-  let depth = 0;
-  for (let index = start; index < source.length; index++) {
-    if (source[index] === "(") depth++;
-    if (source[index] === ")") depth--;
-    if (depth === 0) return index;
-  }
-  return -1;
-}
-
-function findMatchingOpenParen(source: string, end: number): number {
-  let depth = 0;
-  for (let index = end; index >= 0; index--) {
-    if (source[index] === ")") depth++;
-    if (source[index] === "(") depth--;
-    if (depth === 0) return index;
-  }
-  return -1;
-}
-
-function isIdentifierChar(char: string | undefined): boolean {
-  return Boolean(char && /[A-Za-z0-9_]/.test(char));
-}
-
 function replaceLatexSqrt(source: string): string {
   return replaceCommandWithTwoGroups(source, "sqrt", (_first, second) => `sqrt(${second})`, 1);
 }
@@ -611,20 +494,4 @@ function readLatexArgument(source: string, start: number): { value: string; end:
     if (command) return { value: command[0], end: argStart + command[0].length };
   }
   return { value: source[argStart], end: argStart + 1 };
-}
-
-function skipWhitespace(source: string, start: number): number {
-  let index = start;
-  while (/\s/.test(source[index] ?? "")) index++;
-  return index;
-}
-
-function findMatchingBrace(source: string, start: number): number {
-  let depth = 0;
-  for (let index = start; index < source.length; index++) {
-    if (source[index] === "{") depth++;
-    if (source[index] === "}") depth--;
-    if (depth === 0) return index;
-  }
-  return -1;
 }

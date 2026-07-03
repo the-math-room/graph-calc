@@ -1,4 +1,5 @@
 import { freeNames, parseExpression } from "./language.js";
+import { findMatchingParen, isIdentifierChar, skipWhitespace, splitTopLevelComma } from "./source-structure.js";
 
 export function desugarDerivativeExpressions(source: string, params: string[]): string {
   let cursor = 0;
@@ -45,41 +46,4 @@ function findDerivativeCall(source: string, start: number): number {
     index = source.indexOf("derivative", index + 1);
   }
   return -1;
-}
-
-function splitTopLevelComma(source: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let start = 0;
-  for (let index = 0; index < source.length; index++) {
-    const ch = source[index];
-    if (ch === "(" || ch === "[") depth++;
-    if (ch === ")" || ch === "]") depth--;
-    if (ch === "," && depth === 0) {
-      parts.push(source.slice(start, index).trim());
-      start = index + 1;
-    }
-  }
-  parts.push(source.slice(start).trim());
-  return parts;
-}
-
-function findMatchingParen(source: string, start: number): number {
-  let depth = 0;
-  for (let index = start; index < source.length; index++) {
-    if (source[index] === "(") depth++;
-    if (source[index] === ")") depth--;
-    if (depth === 0) return index;
-  }
-  return -1;
-}
-
-function skipWhitespace(source: string, start: number): number {
-  let index = start;
-  while (/\s/.test(source[index] ?? "")) index++;
-  return index;
-}
-
-function isIdentifierChar(char: string | undefined): boolean {
-  return Boolean(char && /[A-Za-z0-9_]/.test(char));
 }
