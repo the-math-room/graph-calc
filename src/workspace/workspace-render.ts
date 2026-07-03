@@ -8,7 +8,8 @@ export function renderRows(
   env: Env,
   rows: RowResult[],
   plots: Plot[],
-  rowErrors: Map<number, string>
+  rowErrors: Map<number, string>,
+  caseDefinitionRows: Set<number> = new Set()
 ): void {
   let explicitGraphAxis: string | null = null;
 
@@ -38,7 +39,7 @@ export function renderRows(
       if (row.kind === "expression" && maybeRenderRegion(row, ast, env, rows, plots, index)) continue;
       if (row.kind === "expression" && maybeRenderBareGraph(row, ast, env, rows, plots, index)) continue;
 
-      renderValueRow(compiled, env, rows, plots);
+      renderValueRow(compiled, env, rows, plots, caseDefinitionRows);
     } catch (error) {
       rows[index] = { ok: false, text: error instanceof Error ? error.message : String(error) };
     }
@@ -115,14 +116,17 @@ function renderValueRow(
   compiled: CompiledRow,
   env: Env,
   rows: RowResult[],
-  plots: Plot[]
+  plots: Plot[],
+  caseDefinitionRows: Set<number>
 ): void {
   const { index, row, ast } = compiled;
   const isDefinition = isDefinitionRow(row);
   const label = isDefinition ? row.name : row.source;
   const value = isDefinition ? env.get(row.name) : evaluate(ast, env);
-  const plot = makePlot(value, label, colors[index % colors.length], index, row);
-  if (plot) plots.push(plot);
+  if (!caseDefinitionRows.has(index)) {
+    const plot = makePlot(value, label, colors[index % colors.length], index, row);
+    if (plot) plots.push(plot);
+  }
   rows[index] = { ok: true, text: summarizeRowValue(compiled, value, env, isDefinition ? row : null) };
 }
 

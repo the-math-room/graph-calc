@@ -6,6 +6,7 @@ type View = { cx: number; cy: number; scale: number };
 
 export type GraphView = {
   draw(plots: Plot[]): void;
+  redraw(): void;
   reset(): void;
   zoomAt(factor: number): void;
 };
@@ -22,7 +23,8 @@ export function createGraphView(
     pointer: null as Point | null,
     dragging: false,
     lastDrag: null as Point | null,
-    plots: [] as Plot[]
+    plots: [] as Plot[],
+    drawFrame: 0
   };
 
   const screenToWorld = (x: number, y: number): Point => {
@@ -107,7 +109,8 @@ export function createGraphView(
     ctx.beginPath();
     let drawing = false;
     let previousY: number | null = null;
-    for (let sx = 0; sx <= width; sx += 2) {
+    const step = state.dragging ? 4 : 2;
+    for (let sx = 0; sx <= width; sx += step) {
       const x = screenToWorld(sx, 0).x;
       const y = evaluatePlotY(plot, x);
       if (y === null) {
@@ -133,7 +136,7 @@ export function createGraphView(
       return;
     }
 
-    const cellSize = 6;
+    const cellSize = state.dragging ? 12 : 6;
     const columns = Math.ceil(width / cellSize);
     const rows = Math.ceil(height / cellSize);
     const inside: boolean[][] = [];
@@ -216,7 +219,8 @@ export function createGraphView(
 
     const points: Point[] = [];
     if (boundary.axis === "y") {
-      for (let sx = 0; sx <= width; sx += 2) {
+      const step = state.dragging ? 4 : 2;
+      for (let sx = 0; sx <= width; sx += step) {
         const x = screenToWorld(sx, 0).x;
         const y = evaluateBoundary(boundary.fn, x);
         if (y === null) continue;
@@ -226,7 +230,8 @@ export function createGraphView(
       return points;
     }
 
-    for (let sy = 0; sy <= height; sy += 2) {
+    const step = state.dragging ? 4 : 2;
+    for (let sy = 0; sy <= height; sy += step) {
       const y = screenToWorld(0, sy).y;
       const x = evaluateBoundary(boundary.fn, y);
       if (x === null) continue;
@@ -279,7 +284,8 @@ export function createGraphView(
     ctx.beginPath();
     let drawing = false;
     let previous: Point | null = null;
-    const samples = Math.max(64, Math.min(1600, Math.floor(width * 1.5)));
+    const maxSamples = state.dragging ? 420 : 1600;
+    const samples = Math.max(64, Math.min(maxSamples, Math.floor(width * 1.5)));
     for (let index = 0; index <= samples; index++) {
       const ratio = index / samples;
       const t = plot.curve.lo + (plot.curve.hi - plot.curve.lo) * ratio;
@@ -323,6 +329,14 @@ export function createGraphView(
     }
   };
 
+  const requestDraw = (): void => {
+    if (state.drawFrame) return;
+    state.drawFrame = window.requestAnimationFrame(() => {
+      state.drawFrame = 0;
+      draw();
+    });
+  };
+
   const zoomAt = (factor: number, point: Point | null = null): void => {
     const before = point ? screenToWorld(point.x, point.y) : null;
     state.view.scale = clamp(state.view.scale * factor, 14, 420);
@@ -331,7 +345,7 @@ export function createGraphView(
       state.view.cx += before.x - after.x;
       state.view.cy += before.y - after.y;
     }
-    draw();
+    requestDraw();
   };
 
   canvas.addEventListener("pointerdown", (event) => {
@@ -350,12 +364,13 @@ export function createGraphView(
       state.view.cy += dy / state.view.scale;
       state.lastDrag = { x: event.clientX, y: event.clientY };
     }
-    draw();
+    requestDraw();
   });
 
   canvas.addEventListener("pointerup", () => {
     state.dragging = false;
     state.lastDrag = null;
+    requestDraw();
   });
 
   canvas.addEventListener("pointerleave", () => {
@@ -363,7 +378,7 @@ export function createGraphView(
     state.dragging = false;
     state.lastDrag = null;
     readoutEl.value = "";
-    draw();
+    requestDraw();
   });
 
   canvas.addEventListener("wheel", (event) => {
@@ -374,11 +389,14 @@ export function createGraphView(
   return {
     draw(plots: Plot[]) {
       state.plots = plots;
-      draw();
+      requestDraw();
+    },
+    redraw() {
+      requestDraw();
     },
     reset() {
       state.view = { cx: 0, cy: 0, scale: 64 };
-      draw();
+      requestDraw();
     },
     zoomAt(factor: number) {
       zoomAt(factor);

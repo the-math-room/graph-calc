@@ -4,7 +4,19 @@ import type { MathfieldElement } from "mathlive";
 import { clamp } from "../core/language.js";
 import { createGraphView } from "./graph-view.js";
 import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "../syntax/math-syntax.js";
-import { NormalizedRow, Plot, WorkspaceProgram, colors, compileWorkspace, examples, normalizeRow, parametricPromptFor } from "../workspace/workspace.js";
+import {
+  NormalizedRow,
+  Plot,
+  WorkspaceFileV1,
+  WorkspaceProgram,
+  colors,
+  compileWorkspace,
+  examples,
+  normalizeRow,
+  parametricPromptFor,
+  readWorkspaceFile,
+  workspaceFileSchema
+} from "../workspace/workspace.js";
 
 type ExpressionMode = "pretty" | "text";
 type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };
@@ -12,11 +24,13 @@ type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };
 type AppState = {
   expressions: ExpressionRow[];
   expressionSizeScale: number;
+  sidebarWidth: number;
 };
 
 const state: AppState = {
   expressions: loadExpressions(),
-  expressionSizeScale: loadExpressionSizeScale()
+  expressionSizeScale: loadExpressionSizeScale(),
+  sidebarWidth: loadSidebarWidth()
 };
 
 const canvas = requireElement<HTMLCanvasElement>("#graph");
@@ -25,16 +39,21 @@ const readoutEl = requireElement<HTMLOutputElement>("#cursor-readout");
 const expressionSizeEl = requireElement<HTMLInputElement>("#expression-size");
 const sidebarResizerEl = requireElement<HTMLElement>("#sidebar-resizer");
 const keyboardToggleEl = requireElement<HTMLButtonElement>("#toggle-keyboard");
+const importWorkspaceFileEl = requireElement<HTMLInputElement>("#import-workspace-file");
 const graphView = createGraphView(
   canvas,
   readoutEl
 );
 let currentProgram: WorkspaceProgram | null = null;
+let refreshTimer: number | null = null;
 
 requireElement<HTMLButtonElement>("#add-expression").addEventListener("click", () => addExpression(""));
 requireElement<HTMLButtonElement>("#insert-parametric").addEventListener("click", insertParametricTemplate);
+requireElement<HTMLButtonElement>("#export-workspace").addEventListener("click", exportWorkspace);
+requireElement<HTMLButtonElement>("#import-workspace").addEventListener("click", () => importWorkspaceFileEl.click());
+importWorkspaceFileEl.addEventListener("change", importWorkspace);
 keyboardToggleEl.addEventListener("click", toggleVirtualKeyboard);
-applySidebarWidth(loadSidebarWidth());
+applySidebarWidth(state.sidebarWidth);
 expressionSizeEl.value = String(state.expressionSizeScale);
 applyExpressionSize();
 expressionSizeEl.addEventListener("input", () => {
@@ -46,7 +65,7 @@ requireElement<HTMLButtonElement>("#zoom-in").addEventListener("click", () => gr
 requireElement<HTMLButtonElement>("#zoom-out").addEventListener("click", () => graphView.zoomAt(0.8));
 requireElement<HTMLButtonElement>("#reset-view").addEventListener("click", graphView.reset);
 
-window.addEventListener("resize", refreshWorkspace);
+window.addEventListener("resize", () => graphView.redraw());
 sidebarResizerEl.addEventListener("pointerdown", startSidebarResize);
 window.mathVirtualKeyboard.addEventListener("virtual-keyboard-toggle", updateKeyboardToggleState);
 
@@ -120,6 +139,71 @@ function saveExpressions(): void {
   localStorage.setItem("lambda-graph-expressions", JSON.stringify(state.expressions));
 }
 
+function currentWorkspaceFile(): WorkspaceFileV1 {
+  return {
+    schema: workspaceFileSchema,
+    rows: state.expressions.map((expression) => ({
+      source: expression.source,
+      latex: expression.latex,
+      mode: expression.mode
+    })),
+    view: {
+      expressionSizeScale: state.expressionSizeScale,
+      sidebarWidth: state.sidebarWidth
+    }
+  };
+}
+
+function exportWorkspace(): void {
+  const text = JSON.stringify(currentWorkspaceFile(), null, 2);
+  const url = URL.createObjectURL(new Blob([text], { type: "application/json" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "lambda-graph-workspace.json";
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
+async function importWorkspace(): Promise<void> {
+  const file = importWorkspaceFileEl.files?.[0];
+  importWorkspaceFileEl.value = "";
+  if (!file) return;
+
+  try {
+    const value: unknown = JSON.parse(await file.text());
+    const workspaceFile = readWorkspaceFile(value);
+    if (!workspaceFile) throw new Error("Not a valid Lambda Graph workspace file.");
+    applyWorkspaceFile(workspaceFile);
+  } catch (error) {
+    alert(error instanceof Error ? error.message : "Could not import workspace.");
+  }
+}
+
+function applyWorkspaceFile(file: WorkspaceFileV1): void {
+  state.expressions = file.rows.map((row) => ({
+    source: row.source,
+    latex: row.latex ?? sourceToLatex(row.source),
+    mode: row.mode
+  }));
+
+  if (file.view?.expressionSizeScale !== undefined) {
+    state.expressionSizeScale = clamp(file.view.expressionSizeScale, 0, 100);
+    expressionSizeEl.value = String(state.expressionSizeScale);
+    localStorage.setItem("lambda-graph-expression-size-scale", String(state.expressionSizeScale));
+    applyExpressionSize();
+  }
+  if (file.view?.sidebarWidth !== undefined) {
+    const width = applySidebarWidth(file.view.sidebarWidth);
+    localStorage.setItem("lambda-graph-sidebar-width", String(width));
+  }
+
+  saveExpressions();
+  renderExpressions();
+  refreshWorkspace();
+}
+
 function toggleVirtualKeyboard(): void {
   const target = activeMathfield() ?? listEl.querySelector<MathfieldElement>(".new-expression-row math-field") ?? listEl.querySelector<MathfieldElement>("math-field");
   target?.focus();
@@ -146,9 +230,11 @@ function loadSidebarWidth(): number {
   return Number.isFinite(stored) ? stored : 400;
 }
 
-function applySidebarWidth(width: number): void {
+function applySidebarWidth(width: number): number {
   const clamped = clamp(width, 320, Math.max(320, window.innerWidth - 360));
+  state.sidebarWidth = clamped;
   document.documentElement.style.setProperty("--sidebar-width", `${clamped}px`);
+  return clamped;
 }
 
 function startSidebarResize(event: PointerEvent): void {
@@ -157,9 +243,9 @@ function startSidebarResize(event: PointerEvent): void {
 
   const onMove = (moveEvent: PointerEvent): void => {
     const width = moveEvent.clientX;
-    applySidebarWidth(width);
-    localStorage.setItem("lambda-graph-sidebar-width", String(clamp(width, 320, Math.max(320, window.innerWidth - 360))));
-    refreshWorkspace();
+    const clamped = applySidebarWidth(width);
+    localStorage.setItem("lambda-graph-sidebar-width", String(clamped));
+    graphView.redraw();
   };
   const onUp = (): void => {
     sidebarResizerEl.removeEventListener("pointermove", onMove);
@@ -400,13 +486,13 @@ function configureMathfield(input: MathfieldElement): void {
 function updateExpressionLatex(index: number, latex: string): void {
   state.expressions[index] = { ...state.expressions[index], source: latexToSource(latex), latex };
   saveExpressions();
-  refreshWorkspace();
+  scheduleWorkspaceRefresh();
 }
 
 function updateExpressionSource(index: number, source: string): void {
   state.expressions[index] = { ...state.expressions[index], source, latex: sourceToLatex(source) };
   saveExpressions();
-  refreshWorkspace();
+  scheduleWorkspaceRefresh();
 }
 
 function escapeInputCommandToText(input: MathfieldElement, index: number): boolean {
@@ -431,10 +517,20 @@ function updateResults(program: WorkspaceProgram): void {
 }
 
 function refreshWorkspace(): void {
+  if (refreshTimer !== null) {
+    window.clearTimeout(refreshTimer);
+    refreshTimer = null;
+  }
   const program = compileWorkspace(state.expressions.map((expression) => expression.source));
   currentProgram = program;
   updateResults(program);
   graphView.draw(program.plots);
+}
+
+function scheduleWorkspaceRefresh(): void {
+  currentProgram = null;
+  if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+  refreshTimer = window.setTimeout(refreshWorkspace, 80);
 }
 
 async function copyRowDiagnostics(index: number, button: HTMLButtonElement): Promise<void> {

@@ -1,0 +1,121 @@
+{
+  "schema": "lambda-graph.workspace.v1",
+  "rows": [
+    {
+      "source": "x",
+      "mode": "text"
+    },
+    {
+      "source": "1",
+      "mode": "text"
+    },
+    {
+      "source": "y = 2x",
+      "mode": "text"
+    },
+    {
+      "source": "f(x) = 2x",
+      "mode": "text"
+    },
+    {
+      "source": "g(x) = 3*f(x)",
+      "mode": "text"
+    },
+    {
+      "source": "g(4)",
+      "mode": "text"
+    },
+    {
+      "source": "2 = v",
+      "mode": "text"
+    },
+    {
+      "source": "volume(r) = (4/3)*pi*r^3",
+      "mode": "text"
+    },
+    {
+      "source": "volume(3)",
+      "mode": "text"
+    },
+    {
+      "source": "a(0) = 1",
+      "mode": "text"
+    },
+    {
+      "source": "a(1) = 2",
+      "mode": "text"
+    },
+    {
+      "source": "a(n) = a(n - 1) + a(n - 2)",
+      "mode": "text"
+    },
+    {
+      "source": "a(6)",
+      "mode": "text"
+    },
+    {
+      "source": "q(1)(h) = 2*h",
+      "mode": "text"
+    },
+    {
+      "source": "q(1)(3)",
+      "mode": "text"
+    },
+    {
+      "source": "area(x1, x2) = integral(fn(x) => x, x1, x2)",
+      "mode": "text"
+    },
+    {
+      "source": "area(1, 2)",
+      "mode": "text"
+    },
+    {
+      "source": "slope(x) = derivative(x^2)",
+      "mode": "text"
+    },
+    {
+      "source": "slope(3)",
+      "mode": "text"
+    },
+    {
+      "source": "sumTo(n) = sum(fn(i) => i, 0, n)",
+      "mode": "text"
+    },
+    {
+      "source": "sumTo(5)",
+      "mode": "text"
+    },
+    {
+      "source": "product(fn(i) => i, 1, 4)",
+      "mode": "text"
+    },
+    {
+      "source": "pts = map(fn(t) => [t, t + 1], range(0, 2, 1))",
+      "mode": "text"
+    },
+    {
+      "source": "pts",
+      "mode": "text"
+    },
+    {
+      "source": "(cos(t), sin(t)) {0 <= t <= 2*pi}",
+      "mode": "text"
+    },
+    {
+      "source": "y < sqrt(x)",
+      "mode": "text"
+    },
+    {
+      "source": "x^2 + y^2 <= 1",
+      "mode": "text"
+    },
+    {
+      "source": "0 < x <= 2",
+      "mode": "text"
+    }
+  ],
+  "view": {
+    "expressionSizeScale": 57,
+    "sidebarWidth": 520
+  }
+}

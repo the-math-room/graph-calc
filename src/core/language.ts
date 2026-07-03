@@ -1,4 +1,4 @@
-export type RuntimeFunction = ((...args: RuntimeValue[]) => RuntimeValue) & { arity: number };
+export type RuntimeFunction = ((...args: RuntimeValue[]) => RuntimeValue) & { arity: number; plotHint?: "never" };
 export type ParametricCurve = { kind: "parametric"; fn: RuntimeFunction; lo: number; hi: number };
 export type ComplexValue = { kind: "complex"; re: number; im: number };
 export type RuntimeValue = number | string | boolean | RuntimeValue[] | RuntimeFunction | ParametricCurve | ComplexValue;

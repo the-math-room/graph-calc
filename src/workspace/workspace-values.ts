@@ -62,10 +62,11 @@ export function isPoint(value: RuntimeValue): value is GraphPoint {
 }
 
 export function makePlot(value: RuntimeValue, label: string, color: string, rowIndex: number, row: Exclude<NormalizedRow, { kind: "empty" }>): Plot | null {
+  if (row.kind === "case-binding") return null;
   if (isParametricCurve(value)) {
     return { kind: "parametric", curve: value, rowIndex, label, color };
   }
-  if (isRuntimeFunction(value) && value.arity >= 1) {
+  if (isRuntimeFunction(value) && value.arity >= 1 && value.plotHint !== "never") {
     return { kind: "function", fn: value, rowIndex, label, color };
   }
   if (Array.isArray(value) && value.every(isPoint)) {

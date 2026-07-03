@@ -65,7 +65,7 @@ math-field {
 
 .brand {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 16px;
   padding: 20px 18px 16px;
@@ -74,13 +74,16 @@ math-field {
 
 .header-actions {
   display: flex;
+  max-width: 204px;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .size-control {
   display: flex;
-  width: 112px;
+  width: 204px;
   align-items: center;
   gap: 7px;
   color: var(--muted);
@@ -89,7 +92,8 @@ math-field {
 }
 
 .size-control input {
-  width: 72px;
+  flex: 1;
+  min-width: 0;
   accent-color: #4878c9;
 }
 

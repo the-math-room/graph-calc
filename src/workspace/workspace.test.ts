@@ -237,34 +237,38 @@ test("compiles subscript-style case definitions as function cases", () => {
   const program = compileWorkspace(["x(1) = 2", "3 = x(2)", "x(1)", "x(2)", "a(1)(2) = 12", "a(1)(2)"]);
   assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true, true, true]);
   assert.deepEqual(program.rows.map((row) => row.text), ["x(1) = 2", "x(2) = 3", "2", "3", "a(1, 2) = 12", "12"]);
-  assert.equal(program.plots.length, 6);
+  assert.equal(program.plots.length, 3);
+  assert.equal(program.plots[0].kind, "expression");
+  assert.equal(program.plots[0].fn(0), 2);
+  assert.equal(program.plots[1].kind, "expression");
+  assert.equal(program.plots[1].fn(0), 3);
   assert.equal(program.plots[2].kind, "expression");
-  assert.equal(program.plots[2].fn(0), 2);
-  assert.equal(program.plots[3].kind, "expression");
-  assert.equal(program.plots[3].fn(0), 3);
-  assert.equal(program.plots[5].kind, "expression");
-  assert.equal(program.plots[5].fn(0), 12);
+  assert.equal(program.plots[2].fn(0), 12);
 });
 
 test("binds identifiers in case arguments as application parameters", () => {
   const program = compileWorkspace(["x(1)(h) = 2*h", "x(1)(3)", "x(1)"]);
   assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true]);
   assert.deepEqual(program.rows.map((row) => row.text), ["x(1, h) = 2*h", "6", "fn/1"]);
-  assert.equal(program.plots.length, 3);
-  assert.equal(program.plots[0].kind, "function");
-  assert.equal(program.plots[1].kind, "expression");
-  assert.equal(program.plots[1].fn(0), 6);
-  assert.equal(program.plots[2].kind, "function");
-  assert.equal(program.plots[2].fn(4), 8);
+  assert.equal(program.plots.length, 1);
+  assert.equal(program.plots[0].kind, "expression");
+  assert.equal(program.plots[0].fn(0), 6);
 });
 
 test("mixes base cases with a general recursive case rule", () => {
   const program = compileWorkspace(["a(0) = 1", "a(1) = 2", "a(n) = a(n-1) + a(n-2)", "a(5)"]);
   assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true]);
   assert.deepEqual(program.rows.map((row) => row.text), ["a(0) = 1", "a(1) = 2", "a: fn/1", "13"]);
-  assert.equal(program.plots.length, 4);
-  assert.equal(program.plots[3].kind, "expression");
-  assert.equal(program.plots[3].fn(0), 13);
+  assert.equal(program.plots.length, 1);
+  assert.equal(program.plots[0].kind, "expression");
+  assert.equal(program.plots[0].fn(0), 13);
+});
+
+test("does not auto-plot recursive case functions", () => {
+  const program = compileWorkspace(["a(0) = 1", "a(1) = 2", "a(n) = a(n-1) + a(n-2)", "a"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["a(0) = 1", "a(1) = 2", "a: fn/1", "fn/1"]);
+  assert.equal(program.plots.length, 0);
 });
 
 test("stops runaway recursive case evaluation", () => {
@@ -276,8 +280,9 @@ test("stops runaway recursive case evaluation", () => {
 test("does not exhaust case evaluation budget across independent graph samples", () => {
   const program = compileWorkspace(["y(2)(x) = x", "y(2)(x)"]);
   assert.deepEqual(program.rows.map((row) => row.ok), [true, true]);
-  assert.equal(program.plots[1].kind, "expression");
-  for (let index = 0; index < 20_050; index++) assert.equal(program.plots[1].fn(3), 3);
+  assert.equal(program.plots.length, 1);
+  assert.equal(program.plots[0].kind, "expression");
+  for (let index = 0; index < 20_050; index++) assert.equal(program.plots[0].fn(3), 3);
 });
 
 test("uses scalar arity to read applied scalars as multiplication", () => {

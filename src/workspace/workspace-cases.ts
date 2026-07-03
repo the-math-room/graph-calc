@@ -90,6 +90,7 @@ function makeCaseFunctionWithState(
     });
   }) as RuntimeFunction;
   fn.arity = 1;
+  fn.plotHint = "never";
   return fn;
 }
 

@@ -14,11 +14,11 @@ type ResolvableDefinition =
   | { kind: "single"; name: string; definition: DefinitionRow }
   | { kind: "cases"; name: string; definitions: CaseDefinitionRow[] };
 
-export function resolveDefinitions(definitions: DefinitionRow[], env: Env, rowErrors: Map<number, string>): void {
+export function resolveDefinitions(definitions: DefinitionRow[], env: Env, rowErrors: Map<number, string>, caseDefinitionRows: Set<number> = new Set()): void {
   const definitionsByName = groupDefinitionsByName(definitions);
   validateDefinitionGroups(definitionsByName, rowErrors);
 
-  const validDefinitions = collectValidDefinitions(definitionsByName, rowErrors);
+  const validDefinitions = collectValidDefinitions(definitionsByName, rowErrors, caseDefinitionRows);
   const state = new Map<string, "visiting" | "done">();
   const stack: string[] = [];
 
@@ -81,13 +81,15 @@ function validateDefinitionGroups(definitionsByName: Map<string, DefinitionRow[]
   }
 }
 
-function collectValidDefinitions(definitionsByName: Map<string, DefinitionRow[]>, rowErrors: Map<number, string>): Map<string, ResolvableDefinition> {
+function collectValidDefinitions(definitionsByName: Map<string, DefinitionRow[]>, rowErrors: Map<number, string>, caseDefinitionRows: Set<number>): Map<string, ResolvableDefinition> {
   const validDefinitions = new Map<string, ResolvableDefinition>();
   for (const [name, candidates] of definitionsByName) {
     const validCandidates = candidates.filter((candidate) => !rowErrors.has(candidate.index));
     if (validCandidates.length === 0) continue;
     if (validCandidates.some((candidate) => candidate.row.kind === "case-binding")) {
-      validDefinitions.set(name, { kind: "cases", name, definitions: validCandidates.map(definitionToCase).filter(isPresentCaseDefinition) });
+      const definitions = validCandidates.map(definitionToCase).filter(isPresentCaseDefinition);
+      for (const definition of definitions) caseDefinitionRows.add(definition.index);
+      validDefinitions.set(name, { kind: "cases", name, definitions });
     } else if (validCandidates.length === 1) {
       validDefinitions.set(name, { kind: "single", name, definition: validCandidates[0] });
     }
