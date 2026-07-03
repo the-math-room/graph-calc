@@ -18,7 +18,7 @@ test("samples implicit region boundaries as contours instead of cell edges", () 
   assert.equal(sampled[0].kind, "region-grid");
   if (sampled[0].kind !== "region-grid") return;
   assert.ok(sampled[0].boundarySegments.some((segment) => segment.from.x !== segment.to.x && segment.from.y !== segment.to.y));
-  assert.ok(sampled[0].boundarySegments.some((segment) => !Number.isInteger(segment.from.x / 6) && !Number.isInteger(segment.from.x / 3)));
+  assert.ok(sampled[0].boundarySegments.some((segment) => !Number.isInteger(segment.from.x) || !Number.isInteger(segment.from.y)));
 });
 
 test("samples implicit equality rows as contours", () => {
@@ -36,4 +36,39 @@ test("samples implicit equality rows as contours", () => {
   assert.equal(sampled[0].kind, "polyline");
   if (sampled[0].kind !== "polyline") return;
   assert.ok(sampled[0].segments.length > 0);
+});
+
+test("samples implicit regions more finely when idle than while interacting", () => {
+  const program = compileWorkspace(["x^2 + y^2 <= 1"]);
+  const baseViewport = {
+    cx: 0,
+    cy: 0,
+    scale: 64,
+    width: 300,
+    height: 300
+  };
+  const idle = sampleWorkspacePlots(program.plots, { ...baseViewport, interactive: false });
+  const interactive = sampleWorkspacePlots(program.plots, { ...baseViewport, interactive: true });
+
+  assert.equal(idle[0].kind, "region-grid");
+  assert.equal(interactive[0].kind, "region-grid");
+  if (idle[0].kind !== "region-grid" || interactive[0].kind !== "region-grid") return;
+  assert.ok(idle[0].boundarySegments.length > interactive[0].boundarySegments.length);
+  assert.ok(idle[0].cells.length > interactive[0].cells.length);
+});
+
+test("caps implicit region sampling budget on large viewports", () => {
+  const program = compileWorkspace(["x^2 + y^2 <= 1"]);
+  const sampled = sampleWorkspacePlots(program.plots, {
+    cx: 0,
+    cy: 0,
+    scale: 64,
+    width: 2400,
+    height: 1600,
+    interactive: false
+  });
+
+  assert.equal(sampled[0].kind, "region-grid");
+  if (sampled[0].kind !== "region-grid") return;
+  assert.ok(sampled[0].cells.length < 70_000);
 });

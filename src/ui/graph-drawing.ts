@@ -1,5 +1,6 @@
 import { formatNumber } from "../workspace/workspace.js";
 import { GraphViewport, SampledPlot, ScreenPoint } from "../workspace/workspace-sampling.js";
+import { graphInteraction } from "./graph-interaction-config.js";
 
 export type GraphViewState = {
   view: { cx: number; cy: number; scale: number };
@@ -36,7 +37,7 @@ export function drawGraphFrame(
 
 export function viewportFor(canvas: HTMLCanvasElement, state: Pick<GraphViewState, "view">, interactive: boolean): GraphViewport {
   const rect = canvas.getBoundingClientRect();
-  const overscan = interactive ? 0.35 : 0.2;
+  const overscan = interactive ? graphInteraction.interactiveOverscan : graphInteraction.idleOverscan;
   return {
     cx: state.view.cx,
     cy: state.view.cy,

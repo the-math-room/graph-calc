@@ -1,10 +1,11 @@
 import { interpolatedContourSegments } from "./marching-squares.js";
 import { sampledBase, screenToWorld } from "./sampling-geometry.js";
+import { samplingCellSize } from "./sampling-quality.js";
 import type { GraphViewport, SampledPlot } from "./sampling-types.js";
 import type { Plot } from "./workspace-values.js";
 
 export function sampleContour(plot: Extract<Plot, { kind: "contour" }>, viewport: GraphViewport): SampledPlot {
-  const cellSize = viewport.interactive ? 10 : 4;
+  const cellSize = samplingCellSize(viewport, "contour");
   const columns = Math.ceil(viewport.width / cellSize);
   const rows = Math.ceil(viewport.height / cellSize);
   const values: (number | null)[][] = [];

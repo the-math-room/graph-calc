@@ -1,6 +1,7 @@
 import { clamp } from "../core/language.js";
 import { GraphViewport, SampledPlot, ScreenPoint } from "../workspace/workspace-sampling.js";
 import { drawGraphFrame, GraphViewState, screenToWorldPoint, viewportFor } from "./graph-drawing.js";
+import { graphInteraction } from "./graph-interaction-config.js";
 
 type Point = ScreenPoint;
 
@@ -58,7 +59,7 @@ export function createGraphView(
 
   const zoomAt = (factor: number, point: Point | null = null): void => {
     const before = point ? screenToWorldPoint(canvas, state, point.x, point.y) : null;
-    state.view.scale = clamp(state.view.scale * factor, 14, 420);
+    state.view.scale = clamp(state.view.scale * factor, graphInteraction.minScale, graphInteraction.maxScale);
     if (before && point) {
       const after = screenToWorldPoint(canvas, state, point.x, point.y);
       state.view.cx += before.x - after.x;
@@ -107,16 +108,16 @@ export function createGraphView(
   };
 
   const applyKeyboardNavigation = (dt: number): void => {
-    const panPixelsPerSecond = 520;
+    const panPixelsPerSecond = graphInteraction.keyboardPanPixelsPerSecond;
     const pan = panPixelsPerSecond * dt / state.view.scale;
     if (activeKeys.has("left")) state.view.cx -= pan;
     if (activeKeys.has("right")) state.view.cx += pan;
     if (activeKeys.has("up")) state.view.cy += pan;
     if (activeKeys.has("down")) state.view.cy -= pan;
 
-    const zoomPerSecond = 3.1;
-    if (activeKeys.has("zoomIn")) state.view.scale = clamp(state.view.scale * Math.pow(zoomPerSecond, dt), 14, 420);
-    if (activeKeys.has("zoomOut")) state.view.scale = clamp(state.view.scale / Math.pow(zoomPerSecond, dt), 14, 420);
+    const zoomPerSecond = graphInteraction.keyboardZoomPerSecond;
+    if (activeKeys.has("zoomIn")) state.view.scale = clamp(state.view.scale * Math.pow(zoomPerSecond, dt), graphInteraction.minScale, graphInteraction.maxScale);
+    if (activeKeys.has("zoomOut")) state.view.scale = clamp(state.view.scale / Math.pow(zoomPerSecond, dt), graphInteraction.minScale, graphInteraction.maxScale);
   };
 
   if (!canvas.hasAttribute("tabindex")) canvas.tabIndex = 0;
@@ -159,7 +160,7 @@ export function createGraphView(
 
   canvas.addEventListener("wheel", (event) => {
     event.preventDefault();
-    zoomAt(event.deltaY < 0 ? 1.12 : 0.89, state.pointer);
+    zoomAt(event.deltaY < 0 ? graphInteraction.wheelZoomInFactor : graphInteraction.wheelZoomOutFactor, state.pointer);
   }, { passive: false });
 
   window.addEventListener("keydown", (event) => {

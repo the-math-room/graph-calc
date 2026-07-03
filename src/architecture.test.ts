@@ -48,6 +48,7 @@ const workspaceSamplingInternals = new Set([
   "workspace/point-sampling.ts",
   "workspace/region-sampling.ts",
   "workspace/sampling-geometry.ts",
+  "workspace/sampling-quality.ts",
   "workspace/sampling-types.ts"
 ]);
 

@@ -14,6 +14,7 @@ import {
 } from "../workspace/workspace.js";
 import { GraphViewport, SampledPlot, sampleWorkspacePlots } from "../workspace/workspace-sampling.js";
 import { ExpressionMode, ExpressionRow, focusExpression as focusExpressionInput, focusNewExpression, renderExpressionList } from "./expression-list.js";
+import { graphInteraction } from "./graph-interaction-config.js";
 import { copyText, rowDiagnostics } from "./row-diagnostics.js";
 
 type CurrentProgram = { rows: RowResult[]; plots: SampledPlot[]; viewport: GraphViewport };
@@ -42,7 +43,7 @@ const graphView = createGraphView(
   readoutEl,
   (viewport) => {
     if (viewport.interactive) {
-      scheduleWorkspaceRefresh(120, "throttle");
+      scheduleWorkspaceRefresh(graphInteraction.interactiveRefreshMs, "throttle");
     } else {
       scheduleWorkspaceRefresh(0);
     }

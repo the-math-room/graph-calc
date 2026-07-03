@@ -1,6 +1,7 @@
 import type { RuntimeValue } from "../core/language.js";
 import { interpolatedContourSegments, predicateContourSegments } from "./marching-squares.js";
 import { isVisibleBoundaryPoint, sampledBase, screenToWorld, worldToScreen } from "./sampling-geometry.js";
+import { samplingCellSize } from "./sampling-quality.js";
 import type { GraphViewport, SampledPlot, ScreenCell, ScreenPoint } from "./sampling-types.js";
 import type { Plot } from "./workspace-values.js";
 
@@ -18,7 +19,7 @@ export function sampleRegion(plot: Extract<Plot, { kind: "region" }>, viewport: 
 }
 
 function sampleRegionGrid(plot: Extract<Plot, { kind: "region" }>, viewport: GraphViewport): SampledPlot {
-  const cellSize = viewport.interactive ? 12 : 6;
+  const cellSize = samplingCellSize(viewport, "region");
   const columns = Math.ceil(viewport.width / cellSize);
   const rows = Math.ceil(viewport.height / cellSize);
   const inside: boolean[][] = [];
@@ -57,7 +58,7 @@ function sampleSmoothBoundary(plot: Extract<Plot, { kind: "region" }>, viewport:
   if (!boundary) return [];
 
   const points: ScreenPoint[] = [];
-  const step = viewport.interactive ? 4 : 2;
+  const step = Math.max(2, Math.floor(samplingCellSize(viewport, "contour") * 0.75));
   if (boundary.axis === "y") {
     for (let sx = 0; sx <= viewport.width; sx += step) {
       const x = screenToWorld(viewport, sx, 0).x;
