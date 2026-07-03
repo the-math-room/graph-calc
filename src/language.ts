@@ -26,6 +26,10 @@ export class Env {
     throw new Error(`Unknown name: ${name}`);
   }
 
+  has(name: string): boolean {
+    return this.bindings.has(name) || Boolean(this.parent?.has(name));
+  }
+
   set(name: string, value: RuntimeValue): void {
     this.bindings.set(name, value);
   }
@@ -120,6 +124,36 @@ export function usesName(ast: Ast, name: string): boolean {
       return usesName(ast.test, name) || usesName(ast.consequent, name) || usesName(ast.alternate, name);
     case "call":
       return usesName(ast.callee, name) || ast.args.some((arg) => usesName(arg, name));
+  }
+}
+
+export function freeNames(ast: Ast, bound = new Set<string>()): Set<string> {
+  switch (ast.type) {
+    case "number":
+      return new Set();
+    case "name":
+      return bound.has(ast.name) ? new Set() : new Set([ast.name]);
+    case "array":
+      return unionSets(ast.items.map((item) => freeNames(item, bound)));
+    case "unary":
+      return freeNames(ast.expr, bound);
+    case "binary":
+      return unionSets([freeNames(ast.left, bound), freeNames(ast.right, bound)]);
+    case "let": {
+      const valueNames = freeNames(ast.value, bound);
+      const bodyBound = new Set(bound);
+      bodyBound.add(ast.name);
+      return unionSets([valueNames, freeNames(ast.body, bodyBound)]);
+    }
+    case "if":
+      return unionSets([freeNames(ast.test, bound), freeNames(ast.consequent, bound), freeNames(ast.alternate, bound)]);
+    case "fn": {
+      const bodyBound = new Set(bound);
+      ast.params.forEach((param) => bodyBound.add(param));
+      return freeNames(ast.body, bodyBound);
+    }
+    case "call":
+      return unionSets([freeNames(ast.callee, bound), ...ast.args.map((arg) => freeNames(arg, bound))]);
   }
 }
 
@@ -341,6 +375,14 @@ class Parser {
 
 function precedence(op: string): number {
   return { "==": 1, "!=": 1, "<": 2, ">": 2, "<=": 2, ">=": 2, "+": 3, "-": 3, "*": 4, "/": 4, "^": 5 }[op] ?? -1;
+}
+
+function unionSets<T>(sets: Set<T>[]): Set<T> {
+  const out = new Set<T>();
+  for (const set of sets) {
+    for (const value of set) out.add(value);
+  }
+  return out;
 }
 
 function applyUnary(op: string, value: RuntimeValue): RuntimeValue {

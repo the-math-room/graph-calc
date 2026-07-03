@@ -27,12 +27,14 @@ Project structure:
 Syntax sugar lives at explicit boundaries:
 
 - `src/language.ts` owns expression-level sugar such as implicit multiplication (`2x`, `2(x + 1)`).
-- `src/workspace.ts` owns row-level sugar such as treating `x`, `2x`, and `y = 2x` as graph expressions.
+- `src/workspace.ts` owns row-level sugar such as treating `x`, `2x`, `y = 2x`, and `2x = y` as graph expressions, orienting `2 = t` as `t = 2`, and normalizing `f(x) = 2x` to `f = fn(x) => 2x`.
 - `src/math-syntax.ts` owns visual-editor translation between MathLive LaTeX and the language source.
 
 Language examples:
 
 ```text
+f(x) = 2x
+g(x) = 3*f(x)
 f = fn(x) => sin(x) + 0.35 * sin(4 * x)
 f
 let a = 0.18 in a * x^3 - 2 * x

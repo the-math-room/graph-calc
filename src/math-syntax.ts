@@ -2,12 +2,22 @@ export const mathFunctionNames = ["sin", "cos", "tan", "asin", "acos", "atan", "
 
 export function sourceToLatex(source: string): string {
   let latex = source.trim();
+  latex = restoreLatexFractions(latex);
   latex = latex.replace(/\*/g, "\\cdot ");
   latex = latex.replace(/\bpi\b/g, "\\pi ");
   for (const name of mathFunctionNames) {
     latex = latex.replace(new RegExp(`\\b${name}\\s*\\(`, "g"), `\\${name}(`);
   }
   return latex;
+}
+
+function restoreLatexFractions(source: string): string {
+  let previous: string;
+  do {
+    previous = source;
+    source = source.replace(/\(\(([^()]+)\)\/\(([^()]+)\)\)/g, "\\frac{$1}{$2}");
+  } while (source !== previous);
+  return source;
 }
 
 export function latexToSource(latex: string): string {
@@ -62,27 +72,43 @@ function replaceCommandWithTwoGroups(
 ): string {
   let index = source.indexOf(`\\${command}`);
   while (index !== -1) {
-    const firstStart = source.indexOf("{", index);
-    if (firstStart === -1) return source;
-    const firstEnd = findMatchingBrace(source, firstStart);
-    if (firstEnd === -1) return source;
-    const first = source.slice(firstStart + 1, firstEnd);
+    const commandEnd = index + command.length + 1;
+    const firstArg = readLatexArgument(source, commandEnd);
+    if (!firstArg) return source;
 
     if (groupCount === 1) {
-      source = source.slice(0, index) + replacer("", first) + source.slice(firstEnd + 1);
+      source = source.slice(0, index) + replacer("", firstArg.value) + source.slice(firstArg.end);
       index = source.indexOf(`\\${command}`, index + 1);
       continue;
     }
 
-    const secondStart = source.indexOf("{", firstEnd + 1);
-    if (secondStart === -1) return source;
-    const secondEnd = findMatchingBrace(source, secondStart);
-    if (secondEnd === -1) return source;
-    const second = source.slice(secondStart + 1, secondEnd);
-    source = source.slice(0, index) + replacer(first, second) + source.slice(secondEnd + 1);
+    const secondArg = readLatexArgument(source, firstArg.end);
+    if (!secondArg) return source;
+    source = source.slice(0, index) + replacer(firstArg.value, secondArg.value) + source.slice(secondArg.end);
     index = source.indexOf(`\\${command}`, index + 1);
   }
   return source;
+}
+
+function readLatexArgument(source: string, start: number): { value: string; end: number } | null {
+  const argStart = skipWhitespace(source, start);
+  if (argStart >= source.length) return null;
+  if (source[argStart] === "{") {
+    const argEnd = findMatchingBrace(source, argStart);
+    if (argEnd === -1) return null;
+    return { value: source.slice(argStart + 1, argEnd), end: argEnd + 1 };
+  }
+  if (source[argStart] === "\\") {
+    const command = source.slice(argStart).match(/^\\[A-Za-z]+/);
+    if (command) return { value: command[0], end: argStart + command[0].length };
+  }
+  return { value: source[argStart], end: argStart + 1 };
+}
+
+function skipWhitespace(source: string, start: number): number {
+  let index = start;
+  while (/\s/.test(source[index] ?? "")) index++;
+  return index;
 }
 
 function findMatchingBrace(source: string, start: number): number {
