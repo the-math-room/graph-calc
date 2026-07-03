@@ -20,6 +20,7 @@
 html,
 body {
   height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -39,15 +40,24 @@ math-field {
 .app-shell {
   display: grid;
   grid-template-columns: minmax(320px, var(--sidebar-width)) 8px minmax(0, 1fr);
-  height: 100vh;
-  min-height: 560px;
+  width: 100vw;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .sidebar {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
+  overflow: hidden;
   background: var(--panel);
+}
+
+.brand,
+.reference {
+  flex: 0 0 auto;
 }
 
 .sidebar-resizer {
@@ -342,6 +352,7 @@ code {
   position: relative;
   min-width: 0;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
   background: #fbfcfd;
 }
@@ -382,6 +393,7 @@ code {
     grid-template-columns: 1fr;
     grid-template-rows: minmax(250px, 42vh) 0 1fr;
     height: 100dvh;
+    min-height: 0;
   }
 
   .sidebar {
