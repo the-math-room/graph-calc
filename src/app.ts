@@ -4,7 +4,7 @@ import type { MathfieldElement } from "mathlive";
 import { clamp } from "./language.js";
 import { createGraphView } from "./graph-view.js";
 import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "./math-syntax.js";
-import { WorkspaceProgram, colors, compileWorkspace, examples } from "./workspace.js";
+import { WorkspaceProgram, colors, compileWorkspace, examples, parametricPromptFor } from "./workspace.js";
 
 type ExpressionMode = "pretty" | "text";
 type ExpressionRow = { source: string; latex: string; mode: ExpressionMode };
@@ -31,6 +31,7 @@ const graphView = createGraphView(
 );
 
 requireElement<HTMLButtonElement>("#add-expression").addEventListener("click", () => addExpression(""));
+requireElement<HTMLButtonElement>("#insert-parametric").addEventListener("click", insertParametricTemplate);
 keyboardToggleEl.addEventListener("click", toggleVirtualKeyboard);
 applySidebarWidth(loadSidebarWidth());
 expressionSizeEl.value = String(state.expressionSizeScale);
@@ -170,16 +171,20 @@ function startSidebarResize(event: PointerEvent): void {
   sidebarResizerEl.addEventListener("pointercancel", onUp);
 }
 
-function addExpression(source: string): void {
+function addExpression(source: string, mode: ExpressionMode = "pretty"): void {
   if (!source) {
     listEl.querySelector<MathfieldElement>(".new-expression-row math-field")?.focus();
     return;
   }
-  state.expressions.push({ source, latex: sourceToLatex(source), mode: "pretty" });
+  state.expressions.push({ source, latex: sourceToLatex(source), mode });
   saveExpressions();
   renderExpressions();
   refreshWorkspace();
   focusExpression(state.expressions.length - 1);
+}
+
+function insertParametricTemplate(): void {
+  addExpression("(cos(t), sin(t)) {0 <= t <= 2*pi}", "text");
 }
 
 function renderExpressions(): void {
@@ -199,6 +204,7 @@ function renderExpressions(): void {
     const result = document.createElement("div");
     result.className = "result";
     result.dataset.resultFor = String(index);
+    const prompt = renderParametricPrompt(expression, index);
 
     const modeToggle = document.createElement("button");
     modeToggle.className = "row-tool-button";
@@ -233,7 +239,7 @@ function renderExpressions(): void {
     actions.className = "row-actions";
     actions.append(remove, modeToggle);
 
-    body.append(input, result);
+    body.append(input, prompt, result);
     card.append(swatch, body, actions);
     listEl.append(card);
   });
@@ -270,6 +276,46 @@ function renderTextExpressionInput(expression: ExpressionRow, index: number): HT
   return input;
 }
 
+function renderParametricPrompt(expression: ExpressionRow, index: number): HTMLElement {
+  const prompt = document.createElement("div");
+  prompt.className = "parametric-prompt";
+  renderLiveParametricPrompt(prompt, expression.source, (template) => {
+    state.expressions[index] = {
+      ...state.expressions[index],
+      source: template,
+      latex: sourceToLatex(template),
+      mode: "pretty"
+    };
+    saveExpressions();
+    renderExpressions();
+    refreshWorkspace();
+    focusExpression(index);
+  });
+  return prompt;
+}
+
+function renderLiveParametricPrompt(prompt: HTMLElement, source: string, accept: (template: string) => void): void {
+  prompt.replaceChildren();
+  const suggestion = parametricPromptFor(source);
+  if (!suggestion) {
+    prompt.hidden = true;
+    return;
+  }
+
+  prompt.hidden = false;
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "parametric-prompt-button";
+  button.textContent = `Add ${suggestion.variable} range`;
+  button.title = "Add parameter bounds";
+  button.setAttribute("aria-label", `Add ${suggestion.variable} range to this parametric curve`);
+  button.addEventListener("click", () => accept(suggestion.template));
+
+  const preview = document.createElement("code");
+  preview.textContent = `{0 <= ${suggestion.variable} <= 2*pi}`;
+  prompt.append(button, preview);
+}
+
 function renderNewExpressionRow(): void {
   const card = document.createElement("article");
   card.className = "expression-card new-expression-row";
@@ -283,27 +329,51 @@ function renderNewExpressionRow(): void {
   input.className = "expression-input";
   input.setAttribute("aria-label", "New expression");
   configureMathfield(input);
-  input.addEventListener("input", () => {
-    const latex = input.getValue("latex-unstyled");
-    const source = latexToSource(latex);
-    if (!source.trim()) return;
-    const index = state.expressions.length;
-    state.expressions.push({ source, latex, mode: "pretty" });
-    saveExpressions();
-    renderExpressions();
-    refreshWorkspace();
-    focusExpression(index);
-  }, { once: true });
 
   const result = document.createElement("div");
   result.className = "result";
+  const prompt = document.createElement("div");
+  prompt.className = "parametric-prompt";
+  prompt.hidden = true;
+  let committingPrompt = false;
+
+  const commit = (): void => {
+    if (committingPrompt) return;
+    const latex = input.getValue("latex-unstyled");
+    const source = latexToSource(latex);
+    if (!source.trim()) return;
+    commitNewExpression(source, latex, "pretty");
+  };
+  input.addEventListener("input", () => {
+    renderLiveParametricPrompt(prompt, latexToSource(input.getValue("latex-unstyled")), (template) => {
+      committingPrompt = true;
+      commitNewExpression(template, sourceToLatex(template), "pretty");
+    });
+  });
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    commit();
+  });
+  input.addEventListener("blur", commit);
 
   const spacer = document.createElement("div");
   spacer.className = "row-actions-spacer";
 
-  body.append(input, result);
+  body.append(input, prompt, result);
   card.append(swatch, body, spacer);
   listEl.append(card);
+}
+
+function commitNewExpression(source: string, latex: string, mode: ExpressionMode): void {
+  const trimmed = source.trim();
+  if (!trimmed) return;
+  const index = state.expressions.length;
+  state.expressions.push({ source: trimmed, latex, mode });
+  saveExpressions();
+  renderExpressions();
+  refreshWorkspace();
+  focusExpression(index);
 }
 
 function focusExpression(index: number): void {

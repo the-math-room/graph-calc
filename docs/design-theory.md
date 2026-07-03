@@ -28,3 +28,6 @@ Current Commitments
 - Case definitions such as `a(0) = 1`, `a(1) = 2`, and `a(n) = a(n-1) + a(n-2)` define one case function.
 - Recurrence evaluation is bounded so a typo cannot hang the page indefinitely.
 - Definite integrals, sums, and products are runtime functions; their visual notations lower to those functions.
+- Parametric curves are explicit runtime values: `parametric(fn(t) => [x(t), y(t)], lo, hi)`. Desmos-shaped coordinate-pair notation such as `(cos(t), sin(t)) {0 <= t <= 2*pi}` is workspace sugar for that value.
+- Parametric bounds denote an ordered interval; `lo` must be less than or equal to `hi`. Reversed chained notation such as `2 >= t >= -2` is accepted only because it still describes the ordered interval `[-2, 2]`.
+- Complex values do not silently become real through numerical tolerance. Real-only contexts, such as parametric bounds, require an actual real number or an explicit projection we have deliberately added.

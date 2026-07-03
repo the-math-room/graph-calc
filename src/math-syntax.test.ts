@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { escapeLatexCommandToText, latexToSource, sourceToLatex } from "./math-syntax.js";
 
 test("converts common math editor latex into source syntax", () => {
-  assert.equal(latexToSource("x^{2}"), "x^2");
+  assert.equal(latexToSource("x^{2}"), "x^(2)");
   assert.equal(latexToSource("x_{1}"), "x(1)");
   assert.equal(latexToSource("x_1_2"), "x(1)(2)");
   assert.equal(latexToSource("x_1_h"), "x(1)(h)");
@@ -11,7 +11,7 @@ test("converts common math editor latex into source syntax", () => {
   assert.equal(latexToSource("x_{n-1}"), "x(n-1)");
   assert.equal(latexToSource("y=2x"), "y=2x");
   assert.equal(latexToSource("\\sin(x)+\\pi"), "sin(x)+pi");
-  assert.equal(latexToSource("\\frac{x^{2}}{2}"), "((x^2)/(2))");
+  assert.equal(latexToSource("\\frac{x^{2}}{2}"), "((x^(2))/(2))");
   assert.equal(latexToSource("y_3=\\frac{\\differentialD f}{\\differentialD x}\\left(2\\right)"), "y(3)=derivative(f,2)");
   assert.equal(latexToSource("y_3=\\frac{df}{dx}(2)"), "y(3)=derivative(f,2)");
   assert.equal(latexToSource("v=\\frac43"), "v=((4)/(3))");
@@ -27,6 +27,8 @@ test("converts common math editor latex into source syntax", () => {
   assert.equal(latexToSource("\\operatorname{produce}(n)=n+1"), "produce(n)=n+1");
   assert.equal(latexToSource("\\sqrt{x+1}"), "sqrt(x+1)");
   assert.equal(latexToSource("\\sqrt x"), "sqrt(x)");
+  assert.equal(latexToSource("\\begin{array}{c}(\\cos(t),\\sin(t))\\\\0\\le t\\le 2\\pi \\end{array}"), "(cos(t), sin(t)) {0 <= t <= 2pi}");
+  assert.equal(latexToSource("\\begin{array}{c}(\\cos(t),\\sin(t))\\\\e^{i\\pi}\\le t\\le 0\\end{array}"), "(cos(t), sin(t)) {e^(i*pi) <= t <= 0}");
   assert.equal(latexToSource("$$ a(n)_{}=a\\left(n-1\\right)+1 $$"), "a(n)=a(n-1)+1");
 });
 
@@ -45,4 +47,5 @@ test("converts source syntax into latex for math editing", () => {
   assert.equal(sourceToLatex("sin(x) + pi"), "\\sin(x) + \\pi ");
   assert.equal(sourceToLatex("2*x"), "2\\cdot x");
   assert.equal(sourceToLatex("v=((4)/(3))*pi*r^3"), "v=\\frac{4}{3}\\cdot \\pi \\cdot r^3");
+  assert.equal(sourceToLatex("(cos(t), sin(t)) {0 <= t <= 2*pi}"), "\\begin{array}{c}(\\cos(t),\\sin(t))\\\\0\\le t\\le 2\\cdot \\pi \\end{array}");
 });

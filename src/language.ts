@@ -1,5 +1,7 @@
 export type RuntimeFunction = ((...args: RuntimeValue[]) => RuntimeValue) & { arity: number };
-export type RuntimeValue = number | string | boolean | RuntimeValue[] | RuntimeFunction;
+export type ParametricCurve = { kind: "parametric"; fn: RuntimeFunction; lo: number; hi: number };
+export type ComplexValue = { kind: "complex"; re: number; im: number };
+export type RuntimeValue = number | string | boolean | RuntimeValue[] | RuntimeFunction | ParametricCurve | ComplexValue;
 
 type TokenType = "number" | "string" | "name" | "op" | "arrow" | "(" | ")" | "[" | "]" | "," | "eof";
 type Token = { type: TokenType; value: string | number };
@@ -38,7 +40,7 @@ export class Env {
 
 export function createBaseEnv(): Env {
   const env = new Env();
-  const constants: Record<string, RuntimeValue> = { pi: Math.PI, e: Math.E, true: true, false: false };
+  const constants: Record<string, RuntimeValue> = { pi: Math.PI, e: Math.E, i: { kind: "complex", re: 0, im: 1 }, true: true, false: false };
   Object.entries(constants).forEach(([name, value]) => env.set(name, value));
 
   const unaryMath = ["sin", "cos", "tan", "asin", "acos", "atan", "sqrt", "abs", "log", "exp", "floor", "ceil", "round"] as const;
@@ -54,6 +56,7 @@ export function createBaseEnv(): Env {
   env.set("range", wrapFunction((start, end, step) => range(asNumber(start), asNumber(end), asNumber(step)), 3));
   env.set("integral", wrapFunction((fn, lo, hi) => integrate(ensureFunction(fn), asNumber(lo), asNumber(hi)), 3));
   env.set("derivative", wrapFunction((...args) => derivativeValues(args), 1));
+  env.set("parametric", wrapFunction((fn, lo, hi) => makeParametricCurve(ensureFunction(fn), asRealNumber(lo), asRealNumber(hi)), 3));
   env.set("error", wrapFunction((message) => {
     throw new Error(asString(message));
   }, 1));
@@ -170,6 +173,10 @@ export function freeNames(ast: Ast, bound = new Set<string>()): Set<string> {
 
 export function isRuntimeFunction(value: RuntimeValue): value is RuntimeFunction {
   return typeof value === "function";
+}
+
+export function isParametricCurve(value: RuntimeValue): value is ParametricCurve {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && "kind" in value && value.kind === "parametric";
 }
 
 export function ensureList(value: RuntimeValue): RuntimeValue[] {
@@ -424,18 +431,18 @@ function unionSets<T>(sets: Set<T>[]): Set<T> {
 }
 
 function applyUnary(op: string, value: RuntimeValue): RuntimeValue {
-  if (op === "-") return -asNumber(value);
+  if (op === "-") return negateNumberLike(value);
   if (op === "+") return asNumber(value);
   if (op === "!") return !value;
   throw new Error(`Unknown operator: ${op}`);
 }
 
 function applyBinary(op: string, left: RuntimeValue, right: RuntimeValue): RuntimeValue {
-  if (op === "+") return asNumber(left) + asNumber(right);
-  if (op === "-") return asNumber(left) - asNumber(right);
-  if (op === "*") return asNumber(left) * asNumber(right);
-  if (op === "/") return asNumber(left) / asNumber(right);
-  if (op === "^") return asNumber(left) ** asNumber(right);
+  if (op === "+") return addNumberLike(left, right);
+  if (op === "-") return subtractNumberLike(left, right);
+  if (op === "*") return multiplyNumberLike(left, right);
+  if (op === "/") return divideNumberLike(left, right);
+  if (op === "^") return powerNumberLike(left, right);
   if (op === "<") return asNumber(left) < asNumber(right);
   if (op === ">") return asNumber(left) > asNumber(right);
   if (op === "<=") return asNumber(left) <= asNumber(right);
@@ -465,6 +472,76 @@ function applyCall(callee: RuntimeValue, args: RuntimeValue[]): RuntimeValue {
 function asNumber(value: RuntimeValue): number {
   if (typeof value !== "number") throw new Error("Expected a number");
   return value;
+}
+
+function asRealNumber(value: RuntimeValue): number {
+  if (typeof value === "number") return value;
+  if (isComplex(value) && value.im === 0) return value.re;
+  throw new Error("Expected a real number");
+}
+
+function asComplex(value: RuntimeValue): ComplexValue {
+  if (typeof value === "number") return { kind: "complex", re: value, im: 0 };
+  if (isComplex(value)) return value;
+  throw new Error("Expected a number");
+}
+
+export function isComplex(value: RuntimeValue): value is ComplexValue {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && "kind" in value && value.kind === "complex";
+}
+
+function simplifyNumberLike(value: ComplexValue): RuntimeValue {
+  return value.im === 0 ? value.re : value;
+}
+
+function negateNumberLike(value: RuntimeValue): RuntimeValue {
+  if (typeof value === "number") return -value;
+  const complex = asComplex(value);
+  return simplifyNumberLike({ kind: "complex", re: -complex.re, im: -complex.im });
+}
+
+function addNumberLike(left: RuntimeValue, right: RuntimeValue): RuntimeValue {
+  if (typeof left === "number" && typeof right === "number") return left + right;
+  const a = asComplex(left);
+  const b = asComplex(right);
+  return simplifyNumberLike({ kind: "complex", re: a.re + b.re, im: a.im + b.im });
+}
+
+function subtractNumberLike(left: RuntimeValue, right: RuntimeValue): RuntimeValue {
+  if (typeof left === "number" && typeof right === "number") return left - right;
+  const a = asComplex(left);
+  const b = asComplex(right);
+  return simplifyNumberLike({ kind: "complex", re: a.re - b.re, im: a.im - b.im });
+}
+
+function multiplyNumberLike(left: RuntimeValue, right: RuntimeValue): RuntimeValue {
+  if (typeof left === "number" && typeof right === "number") return left * right;
+  const a = asComplex(left);
+  const b = asComplex(right);
+  return simplifyNumberLike({ kind: "complex", re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re });
+}
+
+function divideNumberLike(left: RuntimeValue, right: RuntimeValue): RuntimeValue {
+  if (typeof left === "number" && typeof right === "number") return left / right;
+  const a = asComplex(left);
+  const b = asComplex(right);
+  const denominator = b.re * b.re + b.im * b.im;
+  return simplifyNumberLike({ kind: "complex", re: (a.re * b.re + a.im * b.im) / denominator, im: (a.im * b.re - a.re * b.im) / denominator });
+}
+
+function powerNumberLike(left: RuntimeValue, right: RuntimeValue): RuntimeValue {
+  if (typeof left === "number" && typeof right === "number") return left ** right;
+  const base = asComplex(left);
+  const exponent = asComplex(right);
+  const baseRadius = Math.hypot(base.re, base.im);
+  const baseAngle = Math.atan2(base.im, base.re);
+  const logRe = Math.log(baseRadius);
+  const logIm = baseAngle;
+  const productRe = exponent.re * logRe - exponent.im * logIm;
+  const productIm = exponent.re * logIm + exponent.im * logRe;
+  const radius = Math.exp(productRe);
+  const angle = productIm;
+  return simplifyNumberLike({ kind: "complex", re: radius * Math.cos(angle), im: radius * Math.sin(angle) });
 }
 
 function asString(value: RuntimeValue): string {
@@ -506,6 +583,12 @@ function derivativeAt(fn: RuntimeFunction, at: number): number {
   if (!Number.isFinite(at)) throw new Error("Derivative point must be finite");
   const step = Math.max(1e-5, Math.abs(at) * 1e-5);
   return (asNumber(fn(at + step)) - asNumber(fn(at - step))) / (2 * step);
+}
+
+function makeParametricCurve(fn: RuntimeFunction, lo: number, hi: number): ParametricCurve {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) throw new Error("Parametric bounds must be finite");
+  if (lo > hi) throw new Error("Parametric lower bound must be <= upper bound");
+  return { kind: "parametric", fn, lo, hi };
 }
 
 function sumValues(args: RuntimeValue[]): number {

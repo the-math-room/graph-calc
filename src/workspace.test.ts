@@ -1,7 +1,7 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import { latexToSource } from "./math-syntax.js";
-import { compileWorkspace, normalizeRow } from "./workspace.js";
+import { compileWorkspace, normalizeRow, parametricPromptFor } from "./workspace.js";
 
 test("normalizes workspace row sugar before compilation", () => {
   assert.deepEqual(normalizeRow(""), { kind: "empty" });
@@ -16,6 +16,11 @@ test("normalizes workspace row sugar before compilation", () => {
   assert.deepEqual(normalizeRow("y = 2x"), { kind: "graph", source: "y = 2x", expr: "2x" });
   assert.deepEqual(normalizeRow("t = y"), { kind: "graph", source: "t = y", expr: "t" });
   assert.deepEqual(normalizeRow("2s = y"), { kind: "graph", source: "2s = y", expr: "2s" });
+  assert.deepEqual(normalizeRow("(cos(t), sin(t)) {0 <= t <= 2pi}"), {
+    kind: "expression",
+    source: "(cos(t), sin(t)) {0 <= t <= 2pi}",
+    expr: "parametric(fn(t)=>[cos(t),sin(t)],0,2pi)"
+  });
   assert.deepEqual(normalizeRow("2x"), { kind: "expression", source: "2x", expr: "2x" });
 });
 
@@ -27,6 +32,52 @@ test("compiles assignments and plots in order", () => {
   assert.equal(program.plots[1].kind, "function");
   assert.equal(program.plots[2].kind, "points");
   assert.equal(program.plots[3].kind, "points");
+});
+
+test("compiles parametric curves as plots", () => {
+  const program = compileWorkspace(["circle = parametric(fn(t) => [cos(t), sin(t)], 0, 2*pi)", "circle", "(cos(t), sin(t)) {0 <= t <= 2pi}"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [true, true, true]);
+  assert.deepEqual(program.rows.map((row) => row.text), ["circle: parametric", "parametric", "parametric"]);
+  assert.equal(program.plots.length, 3);
+  assert.equal(program.plots[0].kind, "parametric");
+  if (program.plots[0].kind === "parametric") {
+    assert.deepEqual(program.plots[0].curve.fn(0), [1, 0]);
+  }
+  assert.equal(program.plots[2].kind, "parametric");
+  if (program.plots[2].kind === "parametric") {
+    assert.deepEqual(program.plots[2].curve.fn(0), [1, 0]);
+  }
+});
+
+test("rejects complex parametric bounds without an explicit real projection", () => {
+  const program = compileWorkspace(["(cos(t), sin(t)) {e^(i*pi) <= t <= 0}"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [false]);
+  assert.equal(program.rows[0].text, "Expected a real number");
+  assert.equal(program.plots.length, 0);
+});
+
+test("rejects descending parametric intervals", () => {
+  const program = compileWorkspace(["(cos(t), sin(t)) {1 <= t < 0}"]);
+  assert.deepEqual(program.rows.map((row) => row.ok), [false]);
+  assert.equal(program.rows[0].text, "Parametric lower bound must be <= upper bound");
+  assert.equal(program.plots.length, 0);
+});
+
+test("normalizes reversed parametric range restrictions", () => {
+  assert.deepEqual(normalizeRow("(t, t^2) {2 >= t >= -2}"), {
+    kind: "expression",
+    source: "(t, t^2) {2 >= t >= -2}",
+    expr: "parametric(fn(t)=>[t,t^2],-2,2)"
+  });
+});
+
+test("suggests parameter bounds for coordinate-pair rows", () => {
+  assert.deepEqual(parametricPromptFor("(cos(t), sin(t))"), {
+    variable: "t",
+    template: "(cos(t), sin(t)) {0 <= t <= 2*pi}"
+  });
+  assert.equal(parametricPromptFor("(cos(t), sin(t)) {0 <= t <= 2pi}"), null);
+  assert.equal(parametricPromptFor("sin(x)"), null);
 });
 
 test("compiles function definition sugar through lexical bindings", () => {

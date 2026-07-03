@@ -95,6 +95,10 @@ export function createGraphView(
       });
       return;
     }
+    if (plot.kind === "parametric") {
+      drawParametricPlot(plot, width, height);
+      return;
+    }
 
     ctx.beginPath();
     let drawing = false;
@@ -115,6 +119,33 @@ export function createGraphView(
         ctx.lineTo(sx, sy);
       }
       previousY = sy;
+    }
+    ctx.stroke();
+  };
+
+  const drawParametricPlot = (plot: Extract<Plot, { kind: "parametric" }>, width: number, height: number): void => {
+    ctx.beginPath();
+    let drawing = false;
+    let previous: Point | null = null;
+    const samples = Math.max(64, Math.min(1600, Math.floor(width * 1.5)));
+    for (let index = 0; index <= samples; index++) {
+      const ratio = index / samples;
+      const t = plot.curve.lo + (plot.curve.hi - plot.curve.lo) * ratio;
+      const point = evaluateParametricPoint(plot, t);
+      if (!point) {
+        drawing = false;
+        previous = null;
+        continue;
+      }
+
+      const screen = worldToScreen(point.x, point.y);
+      if (!drawing || !previous || screenDistance(screen, previous) > Math.max(width, height) * 0.72) {
+        ctx.moveTo(screen.x, screen.y);
+        drawing = true;
+      } else {
+        ctx.lineTo(screen.x, screen.y);
+      }
+      previous = screen;
     }
     ctx.stroke();
   };
@@ -209,6 +240,21 @@ function evaluatePlotY(plot: Extract<Plot, { kind: "function" | "expression" }>,
   } catch {
     return null;
   }
+}
+
+function evaluateParametricPoint(plot: Extract<Plot, { kind: "parametric" }>, t: number): Point | null {
+  try {
+    const value = plot.curve.fn(t);
+    if (!Array.isArray(value) || value.length !== 2) return null;
+    const [x, y] = value;
+    return typeof x === "number" && Number.isFinite(x) && typeof y === "number" && Number.isFinite(y) ? { x, y } : null;
+  } catch {
+    return null;
+  }
+}
+
+function screenDistance(a: Point, b: Point): number {
+  return Math.hypot(a.x - b.x, a.y - b.y);
 }
 
 function niceStep(target: number): number {

@@ -1,6 +1,6 @@
 import * as assert from "node:assert/strict";
 import { test } from "node:test";
-import { evaluateExpression, freeNames, isRuntimeFunction, parseExpression } from "./language.js";
+import { evaluateExpression, freeNames, isParametricCurve, isRuntimeFunction, parseExpression } from "./language.js";
 
 test("evaluates arithmetic with precedence", () => {
   assert.equal(evaluateExpression("1 + 2 * 3^2"), 19);
@@ -43,6 +43,24 @@ test("evaluates numeric derivatives", () => {
   const derivative = evaluateExpression("derivative(fn(x) => x^3)");
   assert.equal(isRuntimeFunction(derivative), true);
   if (isRuntimeFunction(derivative)) assert.ok(Math.abs(Number(derivative(2)) - 12) < 1e-3);
+});
+
+test("carries complex arithmetic but requires real parametric bounds", () => {
+  const euler = evaluateExpression("e^(i*pi)");
+  assert.notEqual(typeof euler, "number");
+  assert.throws(() => evaluateExpression("parametric(fn(t) => [cos(t), sin(t)], e^(i*pi), 0)"), /Expected a real number/);
+  assert.throws(() => evaluateExpression("parametric(fn(t) => [cos(t), sin(t)], i, 0)"), /Expected a real number/);
+});
+
+test("creates parametric curve values", () => {
+  const value = evaluateExpression("parametric(fn(t) => [cos(t), sin(t)], 0, 2*pi)");
+  assert.equal(isParametricCurve(value), true);
+  if (isParametricCurve(value)) {
+    assert.equal(value.lo, 0);
+    assert.ok(Math.abs(value.hi - 2 * Math.PI) < 1e-12);
+    assert.deepEqual(value.fn(0), [1, 0]);
+  }
+  assert.throws(() => evaluateExpression("parametric(fn(t) => [cos(t), sin(t)], 1, 0)"), /Parametric lower bound must be <= upper bound/);
 });
 
 test("returns callable runtime functions", () => {
